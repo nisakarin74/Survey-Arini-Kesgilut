@@ -1,0 +1,161 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Light Theme Background (Pink Soft Gradient) */
+body {
+  font-family: var(--font-sans);
+  background-image: linear-gradient(to bottom right, #fff1f2, #fce7f3, #fbcfe8);
+  background-attachment: fixed;
+  min-height: 100vh;
+  color: #020617;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark Theme Background (Deep Charcoal & Dark Rose Accent) */
+html.dark body,
+body.dark {
+  background-image: linear-gradient(to bottom right, #090d16, #1a0f1a, #230d20);
+  background-attachment: fixed;
+  color: #f8fafc;
+}
+
+/* Glassmorphism custom components - Light Mode */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(236, 72, 153, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(15, 23, 42, 0.08);
+  color: #020617;
+}
+
+.dark .glass-panel {
+  background: rgba(23, 20, 33, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(244, 114, 182, 0.25);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+  color: #f8fafc;
+}
+
+.glass-panel-heavy {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(236, 72, 153, 0.4);
+  box-shadow: 0 10px 40px 0 rgba(15, 23, 42, 0.1);
+  color: #020617;
+}
+
+.dark .glass-panel-heavy {
+  background: rgba(29, 23, 40, 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(244, 114, 182, 0.3);
+  box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.55);
+  color: #f8fafc;
+}
+
+.glass-panel-dark {
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(244, 114, 182, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+  color: #f8fafc;
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(219, 39, 119, 0.4);
+  color: #020617;
+  font-weight: 700;
+  transition: all 0.2s ease-in-out;
+}
+
+.dark .glass-input {
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(244, 114, 182, 0.35);
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.glass-input:focus {
+  background: #ffffff;
+  border-color: rgba(219, 39, 119, 0.9);
+  box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.25);
+  color: #020617;
+}
+
+.dark .glass-input:focus {
+  background: rgba(15, 23, 42, 0.98);
+  border-color: rgba(244, 114, 182, 0.9);
+  box-shadow: 0 0 0 3px rgba(244, 114, 182, 0.3);
+}
+
+.glass-btn {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(219, 39, 119, 0.4);
+  box-shadow: 0 4px 12px 0 rgba(219, 39, 119, 0.08);
+  color: #020617;
+  font-weight: 800;
+  transition: all 0.2s ease-in-out;
+}
+
+.dark .glass-btn {
+  background: rgba(30, 25, 42, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(244, 114, 182, 0.3);
+  color: #f8fafc;
+}
+
+.glass-btn:hover {
+  background: #ffffff;
+  border-color: rgba(219, 39, 119, 0.8);
+  transform: translateY(-1px);
+  color: #020617;
+}
+
+.dark .glass-btn:hover {
+  background: rgba(42, 33, 58, 0.98);
+  border-color: rgba(244, 114, 182, 0.6);
+  transform: translateY(-1px);
+}
+
+.glass-btn-active {
+  background: rgba(236, 72, 153, 0.2);
+  border-color: rgba(219, 39, 119, 0.8);
+  color: #9d174d;
+  font-weight: 900;
+  box-shadow: 0 4px 12px 0 rgba(236, 72, 153, 0.2);
+}
+
+.dark .glass-btn-active {
+  background: rgba(236, 72, 153, 0.3);
+  border-color: rgba(244, 114, 182, 0.7);
+  color: #f472b6;
+  box-shadow: 0 4px 12px 0 rgba(244, 114, 182, 0.3);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+

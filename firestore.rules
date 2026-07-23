@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow anyone to access sessions and their subcollection of respondents
+    // This allows real-time, multi-user scanning and logging of dental survey data
+    match /sessions/{sessionId} {
+      allow read, write: if true;
+      
+      match /respondents/{respondentId} {
+        allow read, write: if true;
+      }
+    }
+    
+    // User profile permissions
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+  }
+}

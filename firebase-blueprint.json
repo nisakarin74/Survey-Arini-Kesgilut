@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "SurveySession": {
+      "title": "SurveySession",
+      "description": "Information about a dental survey session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "passcode": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name", "passcode"]
+    },
+    "Respondent": {
+      "title": "Respondent",
+      "description": "Dental survey respondent data",
+      "type": "object",
+      "properties": {
+        "nama": { "type": "string" },
+        "tanggalInput": { "type": "string" },
+        "jenisKelamin": { "type": "string", "enum": ["Laki-laki", "Perempuan"] },
+        "umur": { "type": "number" },
+        "kelompokUmur": { "type": "string" },
+        "pendidikan": { "type": "string" },
+        "pekerjaan": { "type": "string" },
+        "gigiSulung": { "type": "object" },
+        "gigiTetap": { "type": "object" },
+        "deft": { "type": "number" },
+        "dmft": { "type": "number" },
+        "mukosa": { "type": "object" },
+        "tindakLanjut": { "type": "object" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["nama", "jenisKelamin", "umur"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "dentist", "surveyor"] }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/SurveySession" },
+      "description": "Collection of survey sessions"
+    },
+    "/sessions/{sessionId}/respondents/{respondentId}": {
+      "schema": { "$ref": "#/entities/Respondent" },
+      "description": "Subcollection of respondents within a survey session"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile collection"
+    }
+  }
+}
