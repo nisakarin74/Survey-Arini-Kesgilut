@@ -73,7 +73,7 @@ const generateTeethForAge = (age: number) => {
 
 export default function DentalForm({ onSaveRespondent, nextRespondentNumber }: DentalFormProps) {
   // Identitas & Examination Metadata
-  const [pemeriksa, setPemeriksa] = useState('drg. Arini Haerunnisa');
+  const [pemeriksa, setPemeriksa] = useState('Arini Haerunnisa');
   const [tanggalInput, setTanggalInput] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [tanggalLahir, setTanggalLahir] = useState('');
   const [umurLengkap, setUmurLengkap] = useState('');

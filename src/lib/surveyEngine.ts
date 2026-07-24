@@ -1114,7 +1114,7 @@ export function generate30DiverseRespondents(): RespondentData[] {
       tindakLanjut: { perluPerawatanSegera: true, perluPerawatanTidakSegera: false, perluDirujuk: true, dirujukKe: 'rsgm_rskgm' },
       createdBy: 'derumarahlaut@gmail.com', createdAt: new Date()
     }
-  ].map(r => ({ ...r, pemeriksa: 'drg. Arini Haerunnisa' }));
+  ].map(r => ({ ...r, pemeriksa: 'Arini Haerunnisa' })) as RespondentData[];
 }
 
 export function generateMockRespondents(): RespondentData[] {
