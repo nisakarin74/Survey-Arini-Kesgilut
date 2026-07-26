@@ -3,6 +3,7 @@ import {
   FileSpreadsheet, 
   FileDown, 
   TrendingUp, 
+  Calculator,
   PlusCircle, 
   TableProperties, 
   CloudSun, 
@@ -22,13 +23,14 @@ import { exportToExcel, exportToPdf, generateMockRespondents } from './lib/surve
 
 // Subcomponents
 import Dashboard from './components/Dashboard';
+import QuantitativeAnalysis from './components/QuantitativeAnalysis';
 import DentalForm from './components/DentalForm';
 import RespondentsList from './components/RespondentsList';
 import SessionManager from './components/SessionManager';
 import LoginForm from './components/LoginForm';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'input' | 'data' | 'cloud'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'quantitative' | 'input' | 'data' | 'cloud'>('dashboard');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // Login Authentication State
@@ -312,6 +314,15 @@ export default function App() {
                       </button>
 
                       <button
+                        onClick={() => { setActiveTab('quantitative'); setIsMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs sm:text-sm font-bold transition-colors text-left ${activeTab === 'quantitative' ? 'bg-pink-50 dark:bg-pink-950/60 text-pink-600 dark:text-pink-400 font-extrabold border-r-4 border-pink-600' : 'text-slate-800 dark:text-slate-200 hover:bg-pink-50/50 dark:hover:bg-slate-800'}`}
+                        id="dropdown-menu-quantitative"
+                      >
+                        <Calculator className="w-4 h-4 text-pink-600 dark:text-pink-400" />
+                        Analisis Kuantitatif
+                      </button>
+
+                      <button
                         onClick={() => { setActiveTab('input'); setIsMenuOpen(false); }}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs sm:text-sm font-bold transition-colors text-left ${activeTab === 'input' ? 'bg-pink-50 dark:bg-pink-950/60 text-pink-600 dark:text-pink-400 font-extrabold border-r-4 border-pink-600' : 'text-slate-800 dark:text-slate-200 hover:bg-pink-50/50 dark:hover:bg-slate-800'}`}
                         id="dropdown-menu-input"
@@ -439,36 +450,76 @@ export default function App() {
         {/* Active Section Header and Session Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white/50 dark:bg-slate-900/60 backdrop-blur-xl border border-pink-200/50 dark:border-pink-900/40 rounded-2xl shadow-sm" id="navigation-bar">
           
-          {/* Active Section Title */}
-          <div className="flex items-center gap-2.5 px-3.5 py-2 bg-pink-100/80 dark:bg-pink-950/80 rounded-xl border border-pink-300/60 dark:border-pink-800/60">
-            {activeTab === 'dashboard' && (
-              <>
-                <TrendingUp className="w-4 h-4 text-pink-600 dark:text-pink-400" />
-                <span className="text-xs font-black text-pink-950 dark:text-pink-200 uppercase tracking-wider">Analisis Real-Time</span>
-              </>
-            )}
-            {activeTab === 'input' && (
-              <>
-                <PlusCircle className="w-4 h-4 text-pink-600 dark:text-pink-400" />
-                <span className="text-xs font-black text-pink-950 dark:text-pink-200 uppercase tracking-wider">Input Pemeriksaan</span>
-              </>
-            )}
-            {activeTab === 'data' && (
-              <>
-                <TableProperties className="w-4 h-4 text-pink-600 dark:text-pink-400" />
-                <span className="text-xs font-black text-pink-950 dark:text-pink-200 uppercase tracking-wider">Data Responden</span>
-              </>
-            )}
-            {activeTab === 'cloud' && (
-              <>
-                <CloudSun className="w-4 h-4 text-pink-600 dark:text-pink-400" />
-                <span className="text-xs font-black text-pink-950 dark:text-pink-200 uppercase tracking-wider">Koneksi Cloud</span>
-              </>
-            )}
+          {/* Quick Tab Switcher Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'dashboard' 
+                  ? 'bg-pink-600 text-white shadow-md shadow-pink-600/30' 
+                  : 'bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-pink-50'
+              }`}
+              id="pill-nav-dashboard"
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              Real-Time
+            </button>
+
+            <button
+              onClick={() => setActiveTab('quantitative')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'quantitative' 
+                  ? 'bg-pink-600 text-white shadow-md shadow-pink-600/30' 
+                  : 'bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-pink-50'
+              }`}
+              id="pill-nav-quantitative"
+            >
+              <Calculator className="w-3.5 h-3.5 text-pink-300" />
+              Analisis Kuantitatif
+            </button>
+
+            <button
+              onClick={() => setActiveTab('input')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'input' 
+                  ? 'bg-pink-600 text-white shadow-md shadow-pink-600/30' 
+                  : 'bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-pink-50'
+              }`}
+              id="pill-nav-input"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              Input Form
+            </button>
+
+            <button
+              onClick={() => setActiveTab('data')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'data' 
+                  ? 'bg-pink-600 text-white shadow-md shadow-pink-600/30' 
+                  : 'bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-pink-50'
+              }`}
+              id="pill-nav-data"
+            >
+              <TableProperties className="w-3.5 h-3.5" />
+              Data ({respondents.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('cloud')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'cloud' 
+                  ? 'bg-pink-600 text-white shadow-md shadow-pink-600/30' 
+                  : 'bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-pink-50'
+              }`}
+              id="pill-nav-cloud"
+            >
+              <CloudSun className="w-3.5 h-3.5" />
+              Cloud
+            </button>
           </div>
 
           {/* Current Session Indicator */}
-          <div className="flex items-center gap-2 px-3.5 py-2 bg-pink-50/70 dark:bg-pink-950/40 backdrop-blur-md border border-pink-200/60 dark:border-pink-800/50 rounded-xl shadow-xs">
+          <div className="flex items-center gap-2 px-3.5 py-1.5 bg-pink-50/70 dark:bg-pink-950/40 backdrop-blur-md border border-pink-200/60 dark:border-pink-800/50 rounded-xl shadow-xs">
             <Users className="w-3.5 h-3.5 text-pink-600 dark:text-pink-400" />
             <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[150px] sm:max-w-[200px]" title={currentSessionName}>
               Sesi: <strong className="font-extrabold text-pink-700 dark:text-pink-300">{currentSessionName}</strong>
@@ -488,6 +539,10 @@ export default function App() {
             {/* Tab Rendering */}
             {activeTab === 'dashboard' && (
               <Dashboard respondents={respondents} />
+            )}
+
+            {activeTab === 'quantitative' && (
+              <QuantitativeAnalysis respondents={respondents} sessionName={currentSessionName} />
             )}
 
             {activeTab === 'input' && (
