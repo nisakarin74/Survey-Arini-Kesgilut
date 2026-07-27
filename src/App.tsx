@@ -14,12 +14,13 @@ import {
   X,
   Sun,
   Moon,
-  LogOut
+  LogOut,
+  ScanLine
 } from 'lucide-react';
 import { collection, doc, addDoc, onSnapshot, query, deleteDoc, updateDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './lib/firebase';
-import { RespondentData } from './types';
-import { exportToExcel, exportToPdf, generateMockRespondents } from './lib/surveyEngine';
+import { RespondentData, AIPlaqueAnalysisResult } from './types';
+import { exportToExcel, exportToPdf, generateMockRespondents, ensureOHISForRespondent } from './lib/surveyEngine';
 
 // Subcomponents
 import Dashboard from './components/Dashboard';
@@ -28,9 +29,10 @@ import DentalForm from './components/DentalForm';
 import RespondentsList from './components/RespondentsList';
 import SessionManager from './components/SessionManager';
 import LoginForm from './components/LoginForm';
+import AIPlaqueDetector from './components/AIPlaqueDetector';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'quantitative' | 'input' | 'data' | 'cloud'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'quantitative' | 'input' | 'ai-detector' | 'data' | 'cloud'>('dashboard');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // Login Authentication State
@@ -91,10 +93,10 @@ export default function App() {
       const list: RespondentData[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        list.push({
+        list.push(ensureOHISForRespondent({
           id: doc.id,
           ...data,
-        } as RespondentData);
+        } as RespondentData));
       });
       
       setRespondents(list);
@@ -332,6 +334,15 @@ export default function App() {
                       </button>
 
                       <button
+                        onClick={() => { setActiveTab('ai-detector'); setIsMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs sm:text-sm font-bold transition-colors text-left ${activeTab === 'ai-detector' ? 'bg-pink-50 dark:bg-pink-950/60 text-pink-600 dark:text-pink-400 font-extrabold border-r-4 border-pink-600' : 'text-slate-800 dark:text-slate-200 hover:bg-pink-50/50 dark:hover:bg-slate-800'}`}
+                        id="dropdown-menu-ai-detector"
+                      >
+                        <ScanLine className="w-4 h-4 text-pink-600 dark:text-pink-400" />
+                        Scanner AI Plak (CNN)
+                      </button>
+
+                      <button
                         onClick={() => { setActiveTab('data'); setIsMenuOpen(false); }}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs sm:text-sm font-bold transition-colors text-left ${activeTab === 'data' ? 'bg-pink-50 dark:bg-pink-950/60 text-pink-600 dark:text-pink-400 font-extrabold border-r-4 border-pink-600' : 'text-slate-800 dark:text-slate-200 hover:bg-pink-50/50 dark:hover:bg-slate-800'}`}
                         id="dropdown-menu-data"
@@ -492,6 +503,19 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => setActiveTab('ai-detector')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'ai-detector' 
+                  ? 'bg-pink-600 text-white shadow-md shadow-pink-600/30' 
+                  : 'bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-pink-50'
+              }`}
+              id="pill-nav-ai-detector"
+            >
+              <ScanLine className="w-3.5 h-3.5 text-pink-300" />
+              Scanner AI Plak (CNN)
+            </button>
+
+            <button
               onClick={() => setActiveTab('data')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'data' 
@@ -550,6 +574,17 @@ export default function App() {
                 onSaveRespondent={handleSaveRespondent} 
                 nextRespondentNumber={respondents.length + 1} 
               />
+            )}
+
+            {activeTab === 'ai-detector' && (
+              <div className="space-y-6 animate-fadeIn">
+                <AIPlaqueDetector 
+                  onApplyToOHIS={(aiResult) => {
+                    // Navigate to input form with a friendly alert
+                    setActiveTab('input');
+                  }}
+                />
+              </div>
             )}
 
             {activeTab === 'data' && (

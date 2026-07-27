@@ -47,8 +47,8 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
   const [selectedGenderFilter, setSelectedGenderFilter] = useState<string>('all');
 
   // Bivariate Variable Selector State
-  const [bivariateVarX, setBivariateVarX] = useState<'kelompokUmur' | 'jenisKelamin' | 'pendidikan' | 'pekerjaan'>('jenisKelamin');
-  const [bivariateVarY, setBivariateVarY] = useState<'statusKaries' | 'keparahanDMFT' | 'gusiBerdarah' | 'lesiMukosa' | 'rencanaRujukan'>('statusKaries');
+  const [bivariateVarX, setBivariateVarX] = useState<'kelompokUmur' | 'jenisKelamin' | 'pendidikan' | 'pekerjaan' | 'kategoriOHIS'>('jenisKelamin');
+  const [bivariateVarY, setBivariateVarY] = useState<'statusKaries' | 'keparahanDMFT' | 'kategoriOHIS' | 'statusOHIS' | 'gusiBerdarah' | 'lesiMukosa' | 'rencanaRujukan'>('statusKaries');
 
   const metrics = calculateQuantitativeAnalysis(respondents);
   const bivariateResult = calculateBivariateAnalysis(respondents, bivariateVarX, bivariateVarY);
@@ -145,7 +145,7 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
       </div>
 
       {/* KPI Cards Overview Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 sm:gap-4">
         
         {/* Total Sample N */}
         <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all">
@@ -178,6 +178,20 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
           </div>
           <span className={`inline-block text-[10px] font-extrabold px-2 py-0.5 rounded-full mt-1.5 ${deftCategoryInfo.badgeBg}`}>
             WHO: {deftCategoryInfo.text.split(' ')[0]}
+          </span>
+        </div>
+
+        {/* Rata-rata OHI-S */}
+        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-teal-200/60 dark:border-teal-900/40 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all">
+          <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Rata-rata OHI-S</p>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-2xl font-black text-teal-600 dark:text-teal-400">{metrics.ohisStats?.avgOHIS?.toFixed(2) || '0.00'}</span>
+            <span className="text-[10px] font-bold text-slate-500">DI: {metrics.ohisStats?.avgDIS?.toFixed(1) || '0.0'}</span>
+          </div>
+          <span className={`inline-block text-[10px] font-extrabold px-2 py-0.5 rounded-full mt-1.5 ${
+            (metrics.ohisStats?.avgOHIS || 0) <= 1.2 ? 'bg-emerald-100 text-emerald-800' : (metrics.ohisStats?.avgOHIS || 0) <= 3.0 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
+          }`}>
+            {(metrics.ohisStats?.avgOHIS || 0) <= 1.2 ? 'Baik' : (metrics.ohisStats?.avgOHIS || 0) <= 3.0 ? 'Sedang' : 'Buruk'}
           </span>
         </div>
 
@@ -542,11 +556,12 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
                 >
                   <option value="jenisKelamin">Jenis Kelamin (Laki-laki vs Perempuan)</option>
                   <option value="kelompokUmur">Kelompok Umur (5-10, 10-18, 18-60, 60+)</option>
+                  <option value="kategoriOHIS">Kategori OHI-S (Baik, Sedang, Buruk)</option>
                   <option value="pendidikan">Tingkat Pendidikan Terakhir</option>
                   <option value="pekerjaan">Sektor Pekerjaan / Aktivitas</option>
                 </select>
                 <p className="text-[11px] text-slate-300 mt-2">
-                  Mengelompokkan data responden berdasarkan kategori pembanding sosial/demografi.
+                  Mengelompokkan data responden berdasarkan kategori pembanding sosial/demografi/status OHI-S.
                 </p>
               </div>
 
@@ -564,6 +579,8 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
                 >
                   <option value="statusKaries">Status Karies (Karies Aktif vs Bebas Karies)</option>
                   <option value="keparahanDMFT">Keparahan DMFT WHO (Rendah &lt;2.7 vs Tinggi &ge;2.7)</option>
+                  <option value="kategoriOHIS">Kebersihan Mulut OHI-S (Baik / Sedang / Buruk)</option>
+                  <option value="statusOHIS">Status OHI-S (Sedang/Buruk &gt;1.2 vs Baik &le;1.2)</option>
                   <option value="gusiBerdarah">Kesehatan Gusi (Gusi Berdarah vs Normal)</option>
                   <option value="lesiMukosa">Lesi Mukosa Oral (Ada Lesi vs Normal)</option>
                   <option value="rencanaRujukan">Status Rujukan Faskes (Memerlukan Rujukan vs Tidak)</option>
@@ -733,14 +750,14 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
             </div>
           </div>
 
-          {/* Group Means & Continuous Variables Comparison (DMF-T & deft) */}
+          {/* Group Means & Continuous Variables Comparison (DMF-T, def-t & OHI-S) */}
           <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm">
             <h3 className="text-base font-black text-slate-900 dark:text-slate-100 mb-2 flex items-center gap-2">
               <Stethoscope className="w-5 h-5 text-pink-600 dark:text-pink-400" />
-              Perbandingan Rata-rata &amp; Standar Deviasi Indeks Karies Per Kelompok
+              Perbandingan Rata-rata &amp; Standar Deviasi Indeks Klinis Per Kelompok
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              Distribusi nilai kontinu DMF-T (gigi tetap) dan def-t (gigi sulung) berdasarkan variabel {bivariateResult.varXLabel}.
+              Distribusi nilai kontinu DMF-T (gigi tetap), def-t (gigi sulung), dan OHI-S (kebersihan mulut) berdasarkan variabel {bivariateResult.varXLabel}.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -753,6 +770,10 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
                     </span>
                   </div>
                   <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 text-[11px]">Rata-rata OHI-S:</span>
+                      <span className="font-mono font-black text-teal-600 dark:text-teal-400">{(g.meanOHIS || 0).toFixed(2)} ± {(g.sdOHIS || 0).toFixed(2)}</span>
+                    </div>
                     <div className="flex justify-between items-center">
                       <span className="text-slate-500 text-[11px]">Rata-rata DMF-T:</span>
                       <span className="font-mono font-black text-pink-600 dark:text-pink-400">{g.meanDMFT.toFixed(2)} ± {g.sdDMFT.toFixed(2)}</span>

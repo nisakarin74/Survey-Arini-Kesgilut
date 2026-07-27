@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Plus, Key, Copy, Check, Info, Database, Trash2, Wifi } from 'lucide-react';
+import { Users, Plus, Key, Copy, Check, Info, Database, Trash2, Wifi, Eye } from 'lucide-react';
 import { RespondentData } from '../types';
 import { generateMockRespondents } from '../lib/surveyEngine';
 
@@ -11,6 +11,7 @@ interface SessionManagerProps {
   onLoadMockData: (mockData: RespondentData[]) => void;
   onClearSessionData: () => void;
   respondentsCount: number;
+  isReadOnly?: boolean;
 }
 
 export default function SessionManager({
@@ -20,7 +21,8 @@ export default function SessionManager({
   onJoinSession,
   onLoadMockData,
   onClearSessionData,
-  respondentsCount
+  respondentsCount,
+  isReadOnly = false
 }: SessionManagerProps) {
   const [newSessionName, setNewSessionName] = useState('');
   const [newPasscode, setNewPasscode] = useState('');
@@ -108,28 +110,32 @@ export default function SessionManager({
               {copied ? 'Tersalin!' : 'Bagikan Info Sesi'}
             </button>
 
-            <button
-              onClick={handleLoadMock}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all shadow-md shadow-indigo-900/30 hover:scale-[1.02] cursor-pointer"
-              id="btn-load-mock"
-            >
-              <Database className="w-4 h-4 text-indigo-200" />
-              Muat Data Simulasi
-            </button>
+            {!isReadOnly && (
+              <>
+                <button
+                  onClick={handleLoadMock}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all shadow-md shadow-indigo-900/30 hover:scale-[1.02] cursor-pointer"
+                  id="btn-load-mock"
+                >
+                  <Database className="w-4 h-4 text-indigo-200" />
+                  Muat Data Simulasi
+                </button>
 
-            {respondentsCount > 0 && (
-              <button
-                onClick={() => {
-                  if (confirm('Hapus seluruh data responden dalam sesi ini dari cloud? Tindakan ini tidak dapat dibatalkan.')) {
-                    onClearSessionData();
-                  }
-                }}
-                className="flex items-center gap-2 bg-rose-500/10 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold py-2.5 px-3.5 rounded-xl transition-all border border-rose-500/20 cursor-pointer"
-                id="btn-clear-session"
-              >
-                <Trash2 className="w-4 h-4" />
-                Hapus Semua Data
-              </button>
+                {respondentsCount > 0 && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Hapus seluruh data responden dalam sesi ini dari cloud? Tindakan ini tidak dapat dibatalkan.')) {
+                        onClearSessionData();
+                      }
+                    }}
+                    className="flex items-center gap-2 bg-rose-500/10 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold py-2.5 px-3.5 rounded-xl transition-all border border-rose-500/20 cursor-pointer"
+                    id="btn-clear-session"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Hapus Semua Data
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

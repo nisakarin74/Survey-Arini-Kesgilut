@@ -2,6 +2,7 @@
   "name": "Survey Kesehatan Gigi Dan Mulut",
   "description": "Aplikasi survey kesehatan gigi dan mulut oleh Arini Haerunnisa dengan analisis real-time, sinkronisasi cloud, dan fitur ekspor PDF/Excel.",
   "requestFramePermissions": [
+    "camera",
     "microphone"
   ],
   "majorCapabilities": [

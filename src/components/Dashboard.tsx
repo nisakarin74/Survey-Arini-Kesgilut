@@ -208,7 +208,15 @@ export default function Dashboard({ respondents }: DashboardProps) {
           </div>
 
           <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md p-4 rounded-2xl border border-pink-300 dark:border-slate-700 text-xs text-slate-950 dark:text-slate-100 space-y-2 shadow-xs">
-            <strong className="text-pink-950 dark:text-pink-200 font-black block uppercase tracking-wide text-[10px]">Indeks Kesehatan Gusi & Mukosa</strong>
+            <strong className="text-pink-950 dark:text-pink-200 font-black block uppercase tracking-wide text-[10px]">Indeks Kebersihan Mulut & Mukosa</strong>
+            {stats.ohisStats && (
+              <div className="flex justify-between items-center font-extrabold">
+                <span>Rata-Rata OHI-S</span>
+                <span className="font-mono text-teal-950 dark:text-teal-200 font-black bg-teal-100 dark:bg-teal-950 px-2 py-0.5 rounded-full border border-teal-300 dark:border-teal-800">
+                  {stats.ohisStats.avgOHIS.toFixed(2)} ({stats.ohisStats.avgOHIS <= 1.2 ? 'Baik' : stats.ohisStats.avgOHIS <= 3.0 ? 'Sedang' : 'Buruk'})
+                </span>
+              </div>
+            )}
             <div className="flex justify-between items-center font-extrabold">
               <span>Gusi Berdarah (BOP)</span>
               <span className="font-mono text-rose-950 dark:text-rose-200 font-black bg-rose-100 dark:bg-rose-950 px-2 py-0.5 rounded-full border border-rose-300 dark:border-rose-800">{((stats.mukosaPct.gusiBerdarah || 0) * 100).toFixed(1)}%</span>

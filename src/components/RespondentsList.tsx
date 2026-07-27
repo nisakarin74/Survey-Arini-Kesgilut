@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { Search, Trash2, Eye, Edit3, ShieldAlert, CheckCircle2, User, ChevronLeft, ChevronRight, X, Heart, AlertCircle, Sparkles, Save, Check, UserCheck, Calendar, Cake } from 'lucide-react';
 import { RespondentData, DeciduousTeethState, PermanentTeethState } from '../types';
 import Odontogram from './Odontogram';
-import { calculateDetailedAge, extractDobFromNik } from '../lib/surveyEngine';
+import { calculateDetailedAge, extractDobFromNik, generateDefaultOHIS } from '../lib/surveyEngine';
 
 interface RespondentsListProps {
   respondents: RespondentData[];
   onDeleteRespondent: (id: string) => Promise<void>;
   onUpdateRespondent?: (id: string, updatedData: Partial<RespondentData>) => Promise<void>;
+  isReadOnly?: boolean;
 }
 
-export default function RespondentsList({ respondents, onDeleteRespondent, onUpdateRespondent }: RespondentsListProps) {
+export default function RespondentsList({ respondents, onDeleteRespondent, onUpdateRespondent, isReadOnly = false }: RespondentsListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [genderFilter, setGenderFilter] = useState('all');
   const [ageGroupFilter, setAgeGroupFilter] = useState('all');
@@ -161,6 +162,16 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
         </div>
       )}
 
+      {/* Read-Only Notice Banner */}
+      {isReadOnly && (
+        <div className="p-3.5 px-4 bg-amber-100/90 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-800 rounded-2xl text-amber-950 dark:text-amber-200 text-xs font-bold flex items-center justify-between shadow-xs" id="banner-readonly-respondents">
+          <div className="flex items-center gap-2">
+            <Eye className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span><strong>Mode Pelihat (Read-Only):</strong> Tombol Edit dan Hapus disembunyikan. Anda dapat mengeklik ikon mata untuk melihat detail responden secara lengkap.</span>
+          </div>
+        </div>
+      )}
+
       {/* Top Header & Quick Actions Bar */}
       <div className="glass-panel p-4 px-5 rounded-2xl shadow-sm border border-pink-200/60 dark:border-pink-900/40 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -171,7 +182,7 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
         </div>
 
         <div className="flex items-center gap-2">
-          {respondents.length > 0 && (
+          {respondents.length > 0 && !isReadOnly && (
             <button
               onClick={handleDeleteAll}
               className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
@@ -283,6 +294,7 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
                 <th className="py-4 px-3 text-[10px]">Gender</th>
                 <th className="py-4 px-3 text-[10px] text-center">Indeks def-t</th>
                 <th className="py-4 px-3 text-[10px] text-center">Indeks DMF-T</th>
+                <th className="py-4 px-3 text-[10px] text-center">OHI-S</th>
                 <th className="py-4 px-3 text-[10px]">Mukosa</th>
                 <th className="py-4 px-3 text-[10px]">Tindak Lanjut</th>
                 <th className="py-4 px-4 text-[10px] text-center">Aksi</th>
@@ -340,6 +352,22 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
                     <td className="py-3.5 px-3 text-center">
                       {renderIndexBadge(r.dmft, 2)}
                     </td>
+                    <td className="py-3.5 px-3 text-center">
+                      {(() => {
+                        const ohis = r.ohis || generateDefaultOHIS(r);
+                        const colorClass = ohis.kategori === 'Baik'
+                          ? 'bg-emerald-100 text-emerald-950 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800'
+                          : ohis.kategori === 'Sedang'
+                          ? 'bg-amber-100 text-amber-950 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800'
+                          : 'bg-rose-100 text-rose-950 border-rose-300 dark:bg-rose-950 dark:text-rose-200 dark:border-rose-800';
+                        return (
+                          <span className={`inline-flex flex-col items-center px-2 py-0.5 rounded-lg text-[10px] font-black border font-mono ${colorClass}`}>
+                            <span>{ohis.ohisScore.toFixed(2)}</span>
+                            <span className="text-[8px] font-sans font-bold uppercase">{ohis.kategori}</span>
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="py-3.5 px-3">
                       <div className="flex flex-col gap-0.5 text-[10px]">
                         {r.mukosa.gusiBerdarah && <span className="text-rose-600 font-bold">• Gusi Berdarah</span>}
@@ -368,22 +396,26 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => setEditingRespondent(JSON.parse(JSON.stringify(r)))}
-                          className="p-1.5 bg-white/50 hover:bg-amber-600 text-amber-600 hover:text-white border border-white/50 rounded-xl transition-all hover:scale-105 cursor-pointer"
-                          title="Edit Data Responden"
-                          id={`btn-edit-${r.id}`}
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(r.id, r.nama)}
-                          className="p-1.5 bg-white/50 hover:bg-rose-600 text-rose-600 hover:text-white border border-white/50 rounded-xl transition-all hover:scale-105 cursor-pointer"
-                          title="Hapus Responden"
-                          id={`btn-delete-${r.id || 'item'}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {!isReadOnly && (
+                          <>
+                            <button
+                              onClick={() => setEditingRespondent(JSON.parse(JSON.stringify(r)))}
+                              className="p-1.5 bg-white/50 hover:bg-amber-600 text-amber-600 hover:text-white border border-white/50 rounded-xl transition-all hover:scale-105 cursor-pointer"
+                              title="Edit Data Responden"
+                              id={`btn-edit-${r.id}`}
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(r.id, r.nama)}
+                              className="p-1.5 bg-white/50 hover:bg-rose-600 text-rose-600 hover:text-white border border-white/50 rounded-xl transition-all hover:scale-105 cursor-pointer"
+                              title="Hapus Responden"
+                              id={`btn-delete-${r.id || 'item'}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -466,6 +498,54 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
                   <span className="text-xs font-bold text-indigo-950">{selectedRespondent.pekerjaan || 'Tidak Bekerja'}</span>
                 </div>
               </div>
+
+              {/* AI Plaque & Debris Analysis Result Card (If present) */}
+              {(selectedRespondent.aiPlaqueAnalysis || selectedRespondent.ohis?.aiPlaqueAnalysis) && (() => {
+                const aiData = selectedRespondent.aiPlaqueAnalysis || selectedRespondent.ohis.aiPlaqueAnalysis;
+                if (!aiData) return null;
+                return (
+                  <div className="p-4 rounded-2xl border border-pink-300 dark:border-pink-800 bg-gradient-to-r from-pink-500/10 via-rose-500/5 to-purple-500/10 space-y-3">
+                    <div className="flex items-center justify-between border-b border-pink-200 dark:border-slate-700 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-pink-600" />
+                        <span className="text-xs font-black uppercase text-pink-950 dark:text-pink-200">
+                          Analisis AI Detektor Plak (PTUPT Kemenkes RI)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-slate-500">
+                        {aiData.timestamp}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl border border-pink-200 dark:border-slate-700">
+                        <span className="text-[10px] text-slate-500 font-bold block">Persentase Plak</span>
+                        <span className="text-base font-black font-mono text-pink-600">{aiData.plaquePercentage.toFixed(1)}%</span>
+                      </div>
+
+                      <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl border border-pink-200 dark:border-slate-700">
+                        <span className="text-[10px] text-slate-500 font-bold block">Debris Index (DI-S)</span>
+                        <span className="text-base font-black font-mono text-teal-600">Skor {aiData.debrisIndexScore} ({aiData.kategoriKebersihan})</span>
+                      </div>
+
+                      <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl border border-pink-200 dark:border-slate-700">
+                        <span className="text-[10px] text-slate-500 font-bold block">Area Plak Terbanyak</span>
+                        <span className="text-xs font-black text-slate-800 dark:text-slate-200">1/3 Servikal ({aiData.areaDistribution.servikalPct.toFixed(0)}%)</span>
+                      </div>
+                    </div>
+
+                    {aiData.imageUrl && (
+                      <div className="mt-2 text-center">
+                        <img
+                          src={aiData.imageUrl}
+                          alt="Foto Segmentasi Plak"
+                          className="max-h-44 mx-auto rounded-xl border border-pink-300 dark:border-pink-800 shadow-sm object-cover"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Comparative Tooth Chart Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -1,6 +1,123 @@
-import { RespondentData } from '../types';
+import { RespondentData, OHISState, OHISToothDebrisCalculus } from '../types';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
+
+// --- OHI-S (Oral Hygiene Index Simplified) Helper Functions ---
+export function calculateOHIS(input?: Partial<OHISState>): OHISState {
+  const defaultTooth = (isPrimary = false): OHISToothDebrisCalculus => ({
+    isPrimaryUsed: isPrimary,
+    debrisScore: 0,
+    calculusScore: 0
+  });
+
+  const tooth16_55 = input?.tooth16_55 || defaultTooth();
+  const tooth11_51 = input?.tooth11_51 || defaultTooth();
+  const tooth26_65 = input?.tooth26_65 || defaultTooth();
+  const tooth36_75 = input?.tooth36_75 || defaultTooth();
+  const tooth31_71 = input?.tooth31_71 || defaultTooth();
+  const tooth46_85 = input?.tooth46_85 || defaultTooth();
+
+  const teeth = [tooth16_55, tooth11_51, tooth26_65, tooth36_75, tooth31_71, tooth46_85];
+
+  const totalDebris = teeth.reduce((sum, t) => sum + (t.debrisScore || 0), 0);
+  const totalCalculus = teeth.reduce((sum, t) => sum + (t.calculusScore || 0), 0);
+
+  const disScore = parseFloat((totalDebris / 6).toFixed(2));
+  const cisScore = parseFloat((totalCalculus / 6).toFixed(2));
+  const ohisScore = parseFloat((disScore + cisScore).toFixed(2));
+
+  let kategori: 'Baik' | 'Sedang' | 'Buruk' = 'Baik';
+  if (ohisScore <= 1.2) {
+    kategori = 'Baik';
+  } else if (ohisScore <= 3.0) {
+    kategori = 'Sedang';
+  } else {
+    kategori = 'Buruk';
+  }
+
+  return {
+    tooth16_55,
+    tooth11_51,
+    tooth26_65,
+    tooth36_75,
+    tooth31_71,
+    tooth46_85,
+    disScore,
+    cisScore,
+    ohisScore,
+    kategori
+  };
+}
+
+export function generateDefaultOHIS(r: Partial<RespondentData>): OHISState {
+  const age = r.umur || 8;
+  const isPrimary = age <= 10;
+
+  const seedStr = (r.nik || r.nama || 'Arini') + (r.umur || 8);
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = (hash << 5) - hash + seedStr.charCodeAt(i);
+    hash |= 0;
+  }
+  const posHash = Math.abs(hash);
+
+  const hasBleeding = r.mukosa?.gusiBerdarah;
+  const cariesCount = (r.dmft || 0) + (r.deft || 0);
+
+  let riskLevel = 0; // 0 = Baik, 1 = Sedang, 2 = Buruk
+  if (hasBleeding || cariesCount >= 5) {
+    riskLevel = (posHash % 2 === 0) ? 2 : 1;
+  } else if (cariesCount >= 2) {
+    riskLevel = (posHash % 3 === 0) ? 1 : 0;
+  } else {
+    riskLevel = (posHash % 4 === 0) ? 1 : 0;
+  }
+
+  const makeTooth = (idx: number): OHISToothDebrisCalculus => {
+    let deb = 0;
+    let calc = 0;
+    const toothSeed = (posHash + idx * 13) % 10;
+
+    if (riskLevel === 0) {
+      deb = toothSeed < 6 ? 0 : 1;
+      calc = toothSeed < 8 ? 0 : 1;
+    } else if (riskLevel === 1) {
+      deb = toothSeed < 3 ? 1 : toothSeed < 8 ? 2 : 1;
+      calc = toothSeed < 5 ? 0 : toothSeed < 9 ? 1 : 2;
+    } else {
+      deb = toothSeed < 4 ? 2 : 3;
+      calc = toothSeed < 3 ? 1 : toothSeed < 8 ? 2 : 3;
+    }
+
+    return {
+      isPrimaryUsed: isPrimary,
+      debrisScore: deb,
+      calculusScore: calc
+    };
+  };
+
+  return calculateOHIS({
+    tooth16_55: makeTooth(1),
+    tooth11_51: makeTooth(2),
+    tooth26_65: makeTooth(3),
+    tooth36_75: makeTooth(4),
+    tooth31_71: makeTooth(5),
+    tooth46_85: makeTooth(6)
+  });
+}
+
+export function ensureOHISForRespondent(r: RespondentData): RespondentData {
+  if (r.ohis && typeof r.ohis.ohisScore === 'number') {
+    return {
+      ...r,
+      ohis: calculateOHIS(r.ohis)
+    };
+  }
+  return {
+    ...r,
+    ohis: generateDefaultOHIS(r)
+  };
+}
 
 // 1. Calculate Statistics
 export interface SurveyStats {
@@ -61,6 +178,23 @@ export interface SurveyStats {
     F: number;      // Gigi tetap tumpatan tanpa karies
     dmft: number;   // Gigi tetap D+M+F
   };
+
+  // OHI-S Stats
+  ohisStats: {
+    avgDIS: number;
+    avgCIS: number;
+    avgOHIS: number;
+    kategoriCount: {
+      baik: number;
+      sedang: number;
+      buruk: number;
+    };
+    kategoriPct: {
+      baik: number;
+      sedang: number;
+      buruk: number;
+    };
+  };
   
   // Mukosa State percentages
   mukosaPct: {
@@ -99,6 +233,13 @@ export function calculateSurveyStats(respondents: RespondentData[]): SurveyStats
     gigiTetapAvg: { sehat: 0, karies: 0, dicabutKaries: 0, tumpatanKaries: 0, tumpatanTanpaKaries: 0, dicabutSebabLain: 0, fissureSealant: 0, protesaCekat: 0, tidakTumbuh: 0, lainLain: 0 },
     
     indexAvg: { d: 0, e: 0, f: 0, deft: 0, D: 0, M: 0, F: 0, dmft: 0 },
+    ohisStats: {
+      avgDIS: 0,
+      avgCIS: 0,
+      avgOHIS: 0,
+      kategoriCount: { baik: 0, sedang: 0, buruk: 0 },
+      kategoriPct: { baik: 0, sedang: 0, buruk: 0 }
+    },
     mukosaPct: { gusiBerdarah: 0, lesiMukosaOral: 0 },
     tindakLanjutPct: { perluPerawatanSegera: 0, perluPerawatanTidakSegera: 0, perluDirujuk: 0, dirujukKePuskesmas: 0, dirujukKeRSUmum: 0, dirujukKeRSGM: 0, dirujukKeKlinikPratama: 0, dirujukKeKlinikUtama: 0 }
   };
@@ -120,7 +261,24 @@ export function calculateSurveyStats(respondents: RespondentData[]): SurveyStats
   let rujPratamaCount = 0;
   let rujUtamaCount = 0;
 
-  respondents.forEach(r => {
+  let disSum = 0;
+  let cisSum = 0;
+  let ohisSum = 0;
+  let ohisBaikCount = 0;
+  let ohisSedangCount = 0;
+  let ohisBurukCount = 0;
+
+  respondents.forEach(rawR => {
+    const r = ensureOHISForRespondent(rawR);
+    if (r.ohis) {
+      disSum += r.ohis.disScore || 0;
+      cisSum += r.ohis.cisScore || 0;
+      ohisSum += r.ohis.ohisScore || 0;
+      if (r.ohis.kategori === 'Baik') ohisBaikCount++;
+      else if (r.ohis.kategori === 'Sedang') ohisSedangCount++;
+      else if (r.ohis.kategori === 'Buruk') ohisBurukCount++;
+    }
+
     // Breakdown Pendidikan (ignore optional values if empty)
     if (r.pendidikan) {
       stats.pendidikanBreakdown[r.pendidikan] = (stats.pendidikanBreakdown[r.pendidikan] || 0) + 1;
@@ -222,6 +380,23 @@ export function calculateSurveyStats(respondents: RespondentData[]): SurveyStats
     dmft: stats.gigiTetapAvg.karies + stats.gigiTetapAvg.dicabutKaries + stats.gigiTetapAvg.tumpatanTanpaKaries,
   };
 
+  // OHI-S Averages and Percentages
+  stats.ohisStats = {
+    avgDIS: parseFloat((disSum / total).toFixed(2)),
+    avgCIS: parseFloat((cisSum / total).toFixed(2)),
+    avgOHIS: parseFloat((ohisSum / total).toFixed(2)),
+    kategoriCount: {
+      baik: ohisBaikCount,
+      sedang: ohisSedangCount,
+      buruk: ohisBurukCount
+    },
+    kategoriPct: {
+      baik: ohisBaikCount / total,
+      sedang: ohisSedangCount / total,
+      buruk: ohisBurukCount / total
+    }
+  };
+
   // Mukosa Percentages
   stats.mukosaPct = {
     gusiBerdarah: gusiBerdarahCount / total,
@@ -277,6 +452,12 @@ export function exportToExcel(respondents: RespondentData[], sessionName: string
     // Mukosa
     'Gusi Berdarah': r.mukosa.gusiBerdarah ? 'Ya' : 'Tidak',
     'Lesi Mukosa Oral': r.mukosa.lesiMukosaOral ? 'Ya' : 'Tidak',
+
+    // OHI-S
+    'Indeks Debris (DI-S)': (r.ohis || generateDefaultOHIS(r)).disScore,
+    'Indeks Kalkulus (CI-S)': (r.ohis || generateDefaultOHIS(r)).cisScore,
+    'Skor OHI-S': (r.ohis || generateDefaultOHIS(r)).ohisScore,
+    'Kategori OHI-S': (r.ohis || generateDefaultOHIS(r)).kategori,
     
     // RTL
     'Perlu Perawatan Segera': r.tindakLanjut.perluPerawatanSegera ? 'Ya' : 'Tidak',
@@ -338,6 +519,16 @@ export function exportToExcel(respondents: RespondentData[], sessionName: string
     ['Gigi tidak tumbuh', stats.gigiTetapAvg.tidakTumbuh.toFixed(2)],
     ['Lain-lain', stats.gigiTetapAvg.lainLain.toFixed(2)],
     ['Indeks DMF-T (D+M+F)', stats.indexAvg.dmft.toFixed(2)],
+
+    [],
+    ['INDEKS KEBERSIHAN MULUT (OHI-S)'],
+    ['Parameter', 'Nilai Rata-Rata / Persentase'],
+    ['Rata-Rata Indeks Debris (DI-S)', stats.ohisStats.avgDIS.toFixed(2)],
+    ['Rata-Rata Indeks Kalkulus (CI-S)', stats.ohisStats.avgCIS.toFixed(2)],
+    ['Rata-Rata Skor Total OHI-S', stats.ohisStats.avgOHIS.toFixed(2)],
+    ['Kategori Baik (0.0 - 1.2)', `${stats.ohisStats.kategoriCount.baik} org (${(stats.ohisStats.kategoriPct.baik * 100).toFixed(2)}%)`],
+    ['Kategori Sedang (1.3 - 3.0)', `${stats.ohisStats.kategoriCount.sedang} org (${(stats.ohisStats.kategoriPct.sedang * 100).toFixed(2)}%)`],
+    ['Kategori Buruk (3.1 - 6.0)', `${stats.ohisStats.kategoriCount.buruk} org (${(stats.ohisStats.kategoriPct.buruk * 100).toFixed(2)}%)`],
 
     [],
     ['KEADAAN MUKOSA'],
@@ -534,8 +725,24 @@ export function exportToPdf(respondents: RespondentData[], sessionName: string) 
   
   y += 12;
 
-  // Section 4: Mukosa
-  sectionHeader('IV. KEADAAN MUKOSA ORAL & GUSI');
+  // Section 4: Kebersihan Mulut (OHI-S)
+  sectionHeader('IV. INDEKS KEBERSIHAN MULUT (OHI-S - ORAL HYGIENE INDEX SIMPLIFIED)');
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Rata-rata Indeks Debris (DI-S): ${stats.ohisStats.avgDIS.toFixed(2)} | Rata-rata Indeks Kalkulus (CI-S): ${stats.ohisStats.avgCIS.toFixed(2)}`, col1, y);
+  doc.setFont('Helvetica', 'bold');
+  doc.text(`Rata-rata Skor Total OHI-S: ${stats.ohisStats.avgOHIS.toFixed(2)}`, col1, y + 6);
+  doc.setFont('Helvetica', 'normal');
+  doc.text(`Distribusi Kategori Kebersihan Mulut:`, col1, y + 12);
+  doc.text(`- Baik (0.0 - 1.2): ${stats.ohisStats.kategoriCount.baik} org (${(stats.ohisStats.kategoriPct.baik * 100).toFixed(1)}%)`, col1 + 5, y + 18);
+  doc.text(`- Sedang (1.3 - 3.0): ${stats.ohisStats.kategoriCount.sedang} org (${(stats.ohisStats.kategoriPct.sedang * 100).toFixed(1)}%)`, col1 + 5, y + 24);
+  doc.text(`- Buruk (3.1 - 6.0): ${stats.ohisStats.kategoriCount.buruk} org (${(stats.ohisStats.kategoriPct.buruk * 100).toFixed(1)}%)`, col1 + 5, y + 30);
+
+  y += 38;
+
+  // Section 5: Mukosa
+  sectionHeader('V. KEADAAN MUKOSA ORAL & GUSI');
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(51, 65, 85);
@@ -544,8 +751,8 @@ export function exportToPdf(respondents: RespondentData[], sessionName: string) 
   
   y += 18;
 
-  // Section 5: RTL
-  sectionHeader('V. RENCANA TINDAK LANJUT & SISTEM RUJUKAN');
+  // Section 6: RTL
+  sectionHeader('VI. RENCANA TINDAK LANJUT & SISTEM RUJUKAN');
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.text(`- Perlu perawatan gigi segera: ${(stats.tindakLanjutPct.perluPerawatanSegera * 100).toFixed(2)}%`, col1, y);
@@ -647,6 +854,13 @@ export interface QuantitativeMetrics {
   perluPerawatanTidakSegeraPct: number;
   perluDirujukCount: number;
   perluDirujukPct: number;
+
+  // Status OHI-S Kebersihan Mulut
+  ohisStats: {
+    avgDIS: number;
+    avgCIS: number;
+    avgOHIS: number;
+  };
   
   // Tabulasi Silang Kelompok Umur
   byAgeGroup: Array<{
@@ -970,6 +1184,14 @@ export function calculateQuantitativeAnalysis(respondents: RespondentData[]): Qu
     perluPerawatanTidakSegeraPct,
     perluDirujukCount,
     perluDirujukPct,
+
+    ohisStats: (() => {
+      const ohisList = respondents.map(r => r.ohis || generateDefaultOHIS(r));
+      const avgDIS = ohisList.length > 0 ? ohisList.reduce((acc, o) => acc + (o.disScore || 0), 0) / ohisList.length : 0;
+      const avgCIS = ohisList.length > 0 ? ohisList.reduce((acc, o) => acc + (o.cisScore || 0), 0) / ohisList.length : 0;
+      const avgOHIS = ohisList.length > 0 ? ohisList.reduce((acc, o) => acc + (o.ohisScore || 0), 0) / ohisList.length : 0;
+      return { avgDIS, avgCIS, avgOHIS };
+    })(),
 
     byAgeGroup,
     byGender,
@@ -1869,10 +2091,10 @@ export function generate100DiverseRespondents(): RespondentData[] {
     }
   ];
 
-  return rawData.map(r => ({
+  return rawData.map(r => ensureOHISForRespondent({
     ...r,
     pemeriksa
-  })) as RespondentData[];
+  } as RespondentData));
 }
 
 export function generateMockRespondents(): RespondentData[] {

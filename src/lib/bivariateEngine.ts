@@ -1,4 +1,5 @@
 import { RespondentData } from '../types';
+import { generateDefaultOHIS } from './surveyEngine';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -10,6 +11,21 @@ export interface ContingencyCell {
   rowPct: number;
   colPct: number;
   totalPct: number;
+}
+
+export interface GroupMeanData {
+  category: string;
+  n: number;
+  meanDMFT: number;
+  sdDMFT: number;
+  meanDeft: number;
+  sdDeft: number;
+  meanOHIS: number;
+  sdOHIS: number;
+  meanDIS: number;
+  sdDIS: number;
+  meanCIS: number;
+  sdCIS: number;
 }
 
 export interface BivariateResult {
@@ -38,14 +54,7 @@ export interface BivariateResult {
   rrCiUpper?: number;
 
   // Mean & SD breakdown for numerical variable comparisons
-  groupMeans: Array<{
-    category: string;
-    n: number;
-    meanDMFT: number;
-    sdDMFT: number;
-    meanDeft: number;
-    sdDeft: number;
-  }>;
+  groupMeans: GroupMeanData[];
   
   // T-Test / ANOVA result
   tTest?: {
@@ -82,20 +91,23 @@ export function chiSquarePValue(chiSq: number, df: number): number {
 // Calculate Bivariate Analysis for selected X and Y variables
 export function calculateBivariateAnalysis(
   respondents: RespondentData[],
-  varXKey: 'kelompokUmur' | 'jenisKelamin' | 'pendidikan' | 'pekerjaan',
-  varYKey: 'statusKaries' | 'keparahanDMFT' | 'gusiBerdarah' | 'lesiMukosa' | 'rencanaRujukan'
+  varXKey: 'kelompokUmur' | 'jenisKelamin' | 'pendidikan' | 'pekerjaan' | 'kategoriOHIS',
+  varYKey: 'statusKaries' | 'keparahanDMFT' | 'kategoriOHIS' | 'statusOHIS' | 'gusiBerdarah' | 'lesiMukosa' | 'rencanaRujukan'
 ): BivariateResult {
   // Label mappings
   const varXLabels: Record<string, string> = {
     kelompokUmur: 'Kelompok Umur',
     jenisKelamin: 'Jenis Kelamin',
     pendidikan: 'Tingkat Pendidikan',
-    pekerjaan: 'Sektor Pekerjaan'
+    pekerjaan: 'Sektor Pekerjaan',
+    kategoriOHIS: 'Kategori OHI-S (Kebersihan Mulut)'
   };
 
   const varYLabels: Record<string, string> = {
     statusKaries: 'Status Karies (Karies vs Bebas)',
     keparahanDMFT: 'Keparahan WHO (Rendah vs Tinggi)',
+    kategoriOHIS: 'Kebersihan Mulut OHI-S (Baik / Sedang / Buruk)',
+    statusOHIS: 'Status OHI-S (Sedang/Buruk vs Baik)',
     gusiBerdarah: 'Gusi Berdarah (Gingival Bleeding)',
     lesiMukosa: 'Lesi Mukosa Oral',
     rencanaRujukan: 'Status Rujukan Faskes'
@@ -107,6 +119,10 @@ export function calculateBivariateAnalysis(
     if (varXKey === 'jenisKelamin') return r.jenisKelamin || 'Tidak Terdata';
     if (varXKey === 'pendidikan') return r.pendidikan || 'Lainnya';
     if (varXKey === 'pekerjaan') return r.pekerjaan || 'Lainnya';
+    if (varXKey === 'kategoriOHIS') {
+      const ohis = r.ohis || generateDefaultOHIS(r);
+      return ohis.kategori || 'Baik';
+    }
     return 'Lainnya';
   };
 
@@ -118,6 +134,14 @@ export function calculateBivariateAnalysis(
     }
     if (varYKey === 'keparahanDMFT') {
       return (r.dmft || 0) >= 2.7 ? 'DMFT Tinggi (>=2.7)' : 'DMFT Rendah (<2.7)';
+    }
+    if (varYKey === 'kategoriOHIS') {
+      const ohis = r.ohis || generateDefaultOHIS(r);
+      return ohis.kategori || 'Baik';
+    }
+    if (varYKey === 'statusOHIS') {
+      const ohis = r.ohis || generateDefaultOHIS(r);
+      return (ohis.kategori === 'Buruk' || ohis.kategori === 'Sedang' || ohis.ohisScore > 1.2) ? 'OHI-S Sedang/Buruk (>1.2)' : 'OHI-S Baik (0.0-1.2)';
     }
     if (varYKey === 'gusiBerdarah') {
       return r.mukosa?.gusiBerdarah ? 'Gusi Berdarah' : 'Normal / Tidak Berdarah';
@@ -142,6 +166,9 @@ export function calculateBivariateAnalysis(
   } else if (varXKey === 'jenisKelamin') {
     const order = ['Laki-laki', 'Perempuan'];
     categoriesX.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  } else if (varXKey === 'kategoriOHIS') {
+    const order = ['Baik', 'Sedang', 'Buruk'];
+    categoriesX.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   }
 
   // Custom ordering for Y
@@ -149,6 +176,10 @@ export function calculateBivariateAnalysis(
     categoriesY = ['Karies Aktif', 'Bebas Karies'];
   } else if (varYKey === 'keparahanDMFT') {
     categoriesY = ['DMFT Tinggi (>=2.7)', 'DMFT Rendah (<2.7)'];
+  } else if (varYKey === 'kategoriOHIS') {
+    categoriesY = ['Baik', 'Sedang', 'Buruk'];
+  } else if (varYKey === 'statusOHIS') {
+    categoriesY = ['OHI-S Sedang/Buruk (>1.2)', 'OHI-S Baik (0.0-1.2)'];
   } else if (varYKey === 'gusiBerdarah') {
     categoriesY = ['Gusi Berdarah', 'Normal / Tidak Berdarah'];
   } else if (varYKey === 'lesiMukosa') {
@@ -241,8 +272,8 @@ export function calculateBivariateAnalysis(
     }
   }
 
-  // Mean & SD per group for continuous variables (DMF-T & deft)
-  const groupMeans = categoriesX.map(cat => {
+  // Mean & SD per group for continuous variables (DMF-T, deft, OHI-S)
+  const groupMeans: GroupMeanData[] = categoriesX.map(cat => {
     const groupRespondents = respondents.filter(r => getXValue(r) === cat);
     const n = groupRespondents.length;
     
@@ -258,7 +289,23 @@ export function calculateBivariateAnalysis(
     const varianceDeft = n > 1 ? deftVals.reduce((a, b) => a + Math.pow(b - meanDeft, 2), 0) / (n - 1) : 0;
     const sdDeft = Math.sqrt(varianceDeft);
 
-    return { category: cat, n, meanDMFT, sdDMFT, meanDeft, sdDeft };
+    // Mean & SD OHI-S
+    const ohisVals = groupRespondents.map(r => (r.ohis || generateDefaultOHIS(r)).ohisScore || 0);
+    const meanOHIS = n > 0 ? ohisVals.reduce((a, b) => a + b, 0) / n : 0;
+    const varianceOHIS = n > 1 ? ohisVals.reduce((a, b) => a + Math.pow(b - meanOHIS, 2), 0) / (n - 1) : 0;
+    const sdOHIS = Math.sqrt(varianceOHIS);
+
+    // Mean & SD DI-S
+    const disVals = groupRespondents.map(r => (r.ohis || generateDefaultOHIS(r)).disScore || 0);
+    const meanDIS = n > 0 ? disVals.reduce((a, b) => a + b, 0) / n : 0;
+    const sdDIS = Math.sqrt(n > 1 ? disVals.reduce((a, b) => a + Math.pow(b - meanDIS, 2), 0) / (n - 1) : 0);
+
+    // Mean & SD CI-S
+    const cisVals = groupRespondents.map(r => (r.ohis || generateDefaultOHIS(r)).cisScore || 0);
+    const meanCIS = n > 0 ? cisVals.reduce((a, b) => a + b, 0) / n : 0;
+    const sdCIS = Math.sqrt(n > 1 ? cisVals.reduce((a, b) => a + Math.pow(b - meanCIS, 2), 0) / (n - 1) : 0);
+
+    return { category: cat, n, meanDMFT, sdDMFT, meanDeft, sdDeft, meanOHIS, sdOHIS, meanDIS, sdDIS, meanCIS, sdCIS };
   });
 
   // T-Test calculation for 2 groups
@@ -435,11 +482,11 @@ export function exportBivariatePdf(result: BivariateResult, sessionName: string)
 
   y = (doc as any).lastAutoTable.finalY + 10;
 
-  // Section 3: Group Mean Comparison (DMF-T & deft)
+  // Section 3: Group Mean Comparison (DMF-T, deft, OHI-S)
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(190, 24, 93);
-  doc.text('3. Perbandingan Rata-rata & Standar Deviasi Indeks Karies', 14, y);
+  doc.text('3. Perbandingan Rata-rata & Standar Deviasi Indeks Klinis (DMF-T, def-t & OHI-S)', 14, y);
 
   y += 6;
 
@@ -447,12 +494,13 @@ export function exportBivariatePdf(result: BivariateResult, sessionName: string)
     g.category,
     String(g.n),
     `${g.meanDMFT.toFixed(2)} ± ${g.sdDMFT.toFixed(2)}`,
-    `${g.meanDeft.toFixed(2)} ± ${g.sdDeft.toFixed(2)}`
+    `${g.meanDeft.toFixed(2)} ± ${g.sdDeft.toFixed(2)}`,
+    `${g.meanOHIS.toFixed(2)} ± ${g.sdOHIS.toFixed(2)}`
   ]);
 
   autoTable(doc, {
     startY: y,
-    head: [[`Kategori ${result.varXLabel}`, 'N Sampel', 'Rata-rata DMF-T ± SD', 'Rata-rata def-t ± SD']],
+    head: [[`Kategori ${result.varXLabel}`, 'N Sampel', 'Rata-rata DMF-T ± SD', 'Rata-rata def-t ± SD', 'Rata-rata OHI-S ± SD']],
     body: meanRows,
     theme: 'grid',
     headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
@@ -527,15 +575,17 @@ export function exportBivariateExcel(result: BivariateResult, sessionName: strin
       ['Independent T-Test (Beda Mean)', result.tTest.tValue.toFixed(3), result.tTest.df, result.tTest.pValue < 0.001 ? '< 0.001' : result.tTest.pValue.toFixed(3), result.tTest.isSignificant ? 'Beda Mean Signifikan' : 'Beda Mean Tidak Signifikan']
     ] : []),
     [],
-    ['III. UJI BEDA RATA-RATA DENTITION (DMF-T & deft)'],
-    [`Kategori ${result.varXLabel}`, 'N', 'Mean DMF-T', 'SD DMF-T', 'Mean def-t', 'SD def-t'],
+    ['III. UJI BEDA RATA-RATA INDEKS KLINIS (DMF-T, def-t & OHI-S)'],
+    [`Kategori ${result.varXLabel}`, 'N', 'Mean DMF-T', 'SD DMF-T', 'Mean def-t', 'SD def-t', 'Mean OHI-S', 'SD OHI-S'],
     ...result.groupMeans.map(g => [
       g.category,
       g.n,
       g.meanDMFT.toFixed(2),
       g.sdDMFT.toFixed(2),
       g.meanDeft.toFixed(2),
-      g.sdDeft.toFixed(2)
+      g.sdDeft.toFixed(2),
+      g.meanOHIS.toFixed(2),
+      g.sdOHIS.toFixed(2)
     ]),
     [],
     ['IV. INTERPRETASI NARRATIVE RESEARCH'],

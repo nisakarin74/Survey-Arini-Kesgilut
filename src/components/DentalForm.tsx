@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Smile, ShieldAlert, HeartPulse, Activity, UserPlus, Sparkles, Mic, MicOff, Volume2, VolumeX, Check, ChevronDown, ChevronUp, AlertCircle, UserCheck, Calendar, Cake } from 'lucide-react';
-import { RespondentData, DeciduousTeethState, PermanentTeethState } from '../types';
+import { Save, RefreshCw, Smile, ShieldAlert, HeartPulse, Activity, UserPlus, Sparkles, Mic, MicOff, Volume2, VolumeX, Check, ChevronDown, ChevronUp, AlertCircle, UserCheck, Calendar, Cake, Info, Eye, Camera, ScanLine } from 'lucide-react';
+import { RespondentData, DeciduousTeethState, PermanentTeethState, OHISState, OHISToothDebrisCalculus, AIPlaqueAnalysisResult } from '../types';
 import Odontogram from './Odontogram';
-import { calculateDetailedAge, extractDobFromNik } from '../lib/surveyEngine';
+import AIPlaqueDetector from './AIPlaqueDetector';
+import { calculateDetailedAge, extractDobFromNik, calculateOHIS } from '../lib/surveyEngine';
 
 interface DentalFormProps {
   onSaveRespondent: (data: Omit<RespondentData, 'id' | 'createdAt' | 'createdBy'>) => Promise<void>;
   nextRespondentNumber: number;
+  isReadOnly?: boolean;
 }
 
 const initialGSState: DeciduousTeethState = {
@@ -71,7 +73,7 @@ const generateTeethForAge = (age: number) => {
   return status;
 };
 
-export default function DentalForm({ onSaveRespondent, nextRespondentNumber }: DentalFormProps) {
+export default function DentalForm({ onSaveRespondent, nextRespondentNumber, isReadOnly = false }: DentalFormProps) {
   // Identitas & Examination Metadata
   const [pemeriksa, setPemeriksa] = useState('Arini Haerunnisa');
   const [tanggalInput, setTanggalInput] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -91,6 +93,57 @@ export default function DentalForm({ onSaveRespondent, nextRespondentNumber }: D
   const [gigiSulung, setGigiSulung] = useState<DeciduousTeethState>({ ...initialGSState });
   const [gigiTetap, setGigiTetap] = useState<PermanentTeethState>({ ...initialGTState });
   
+  // OHI-S State
+  const [ohisState, setOhisState] = useState<OHISState>(() => {
+    return calculateOHIS({
+      tooth16_55: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth11_51: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth26_65: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth36_75: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth31_71: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth46_85: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 }
+    });
+  });
+
+  const [showOhisGuide, setShowOhisGuide] = useState(false);
+  const [aiPlaqueResult, setAiPlaqueResult] = useState<AIPlaqueAnalysisResult | null>(null);
+  const [showAiDetector, setShowAiDetector] = useState(false);
+
+  const handleApplyAIToOHIS = (aiResult: AIPlaqueAnalysisResult) => {
+    setAiPlaqueResult(aiResult);
+    const scores = aiResult.indexTeethScores;
+    setOhisState(prev => {
+      const updatedTeeth = {
+        tooth16_55: { ...prev.tooth16_55, debrisScore: scores.gigi16 },
+        tooth11_51: { ...prev.tooth11_51, debrisScore: scores.gigi11 },
+        tooth26_65: { ...prev.tooth26_65, debrisScore: scores.gigi26 },
+        tooth36_75: { ...prev.tooth36_75, debrisScore: scores.gigi36 },
+        tooth31_71: { ...prev.tooth31_71, debrisScore: scores.gigi31 },
+        tooth46_85: { ...prev.tooth46_85, debrisScore: scores.gigi46 },
+      };
+      const recalculated = calculateOHIS(updatedTeeth);
+      return {
+        ...recalculated,
+        aiPlaqueAnalysis: aiResult,
+      };
+    });
+  };
+
+  const handleOhisToothChange = (
+    toothKey: 'tooth16_55' | 'tooth11_51' | 'tooth26_65' | 'tooth36_75' | 'tooth31_71' | 'tooth46_85',
+    field: 'isPrimaryUsed' | 'debrisScore' | 'calculusScore',
+    val: boolean | number
+  ) => {
+    setOhisState(prev => {
+      const currentTooth = prev[toothKey];
+      const updatedTooth = { ...currentTooth, [field]: val };
+      return calculateOHIS({
+        ...prev,
+        [toothKey]: updatedTooth
+      });
+    });
+  };
+
   // Mukosa & RTL
   const [gusiBerdarah, setGusiBerdarah] = useState(false);
   const [lesiMukosaOral, setLesiMukosaOral] = useState(false);
@@ -753,11 +806,23 @@ export default function DentalForm({ onSaveRespondent, nextRespondentNumber }: D
     setPerluPerawatanTidakSegera(false);
     setPerluDirujuk(false);
     setDirujukKe('tidak_dirujuk');
+    setOhisState(calculateOHIS({
+      tooth16_55: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth11_51: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth26_65: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth36_75: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth31_71: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 },
+      tooth46_85: { isPrimaryUsed: false, debrisScore: 0, calculusScore: 0 }
+    }));
     setSuccess(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly) {
+      alert("Sesi Pelihat Saja (Read-Only): Anda hanya dapat membaca data. Untuk menambah data baru, silakan login dengan akun Petugas.");
+      return;
+    }
     if (!nama.trim()) return;
 
     setSaving(true);
@@ -779,6 +844,11 @@ export default function DentalForm({ onSaveRespondent, nextRespondentNumber }: D
         teethStatus,
         deft,
         dmft,
+        ohis: {
+          ...ohisState,
+          aiPlaqueAnalysis: aiPlaqueResult || ohisState.aiPlaqueAnalysis
+        },
+        aiPlaqueAnalysis: aiPlaqueResult || undefined,
         mukosa: {
           gusiBerdarah,
           lesiMukosaOral,
@@ -827,6 +897,18 @@ export default function DentalForm({ onSaveRespondent, nextRespondentNumber }: D
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-5xl mx-auto pb-12 p-2" id="dental-form-root">
+      
+      {/* Read-Only Mode Banner */}
+      {isReadOnly && (
+        <div className="p-4 rounded-2xl bg-amber-100/90 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-200 text-xs font-bold flex items-center gap-3 shadow-md animate-fadeIn" id="banner-readonly-form">
+          <Eye className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <div>
+            <p className="font-black text-sm text-amber-950 dark:text-amber-100">Sesi Pelihat Saja (Read-Only Active)</p>
+            <p className="text-slate-700 dark:text-slate-300">Form input ini berada dalam mode peninjauan saja. Pengisian dan penyimpanan data baru dinonaktifkan pada sesi ini.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header Presets */}
       <div className="glass-panel rounded-2xl p-4 border border-pink-300/60 dark:border-pink-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
         <div>
@@ -1285,6 +1367,222 @@ export default function DentalForm({ onSaveRespondent, nextRespondentNumber }: D
           {/* Visual Odontogram */}
           <Odontogram teethStatus={teethStatus} onChange={handleToothChange} />
 
+          {/* Section IV: Pemeriksaan OHI-S (Oral Hygiene Index Simplified) */}
+          <div className="glass-panel rounded-3xl border border-teal-200 dark:border-teal-900/40 p-5 md:p-6 shadow-md space-y-5 bg-gradient-to-br from-white/95 via-teal-50/20 to-emerald-50/30 dark:from-slate-900/95 dark:via-slate-900/80 dark:to-teal-950/20">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-teal-200 dark:border-slate-800 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                  <h3 className="text-base font-black text-slate-950 dark:text-slate-100 uppercase tracking-wider">
+                    Pemeriksaan Kebersihan Mulut (OHI-S)
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-1">
+                  Pemeriksaan Debris (DI-S) & Kalkulus (CI-S) pada 6 Gigi Indeks (Gunakan gigi sulung pengganti jika gigi tetap belum tumbuh sempurna)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowAiDetector(!showAiDetector)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white text-xs font-black rounded-xl shadow-md transition-all cursor-pointer"
+                  id="btn-toggle-ai-plaque"
+                >
+                  <ScanLine className="w-3.5 h-3.5" />
+                  {showAiDetector ? 'Tutup Scanner AI' : 'Scanner AI Plak (CNN PTUPT)'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowOhisGuide(!showOhisGuide)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-100/80 dark:bg-teal-950/80 border border-teal-300 dark:border-teal-800 text-teal-950 dark:text-teal-200 text-xs font-bold rounded-xl hover:bg-teal-200/80 transition-all cursor-pointer"
+                >
+                  <Info className="w-3.5 h-3.5 text-teal-600" />
+                  {showOhisGuide ? 'Sembunyikan Panduan' : 'Panduan Skor OHI-S'}
+                </button>
+              </div>
+            </div>
+
+            {/* AI Plaque Detector Collapsible Section */}
+            {showAiDetector && (
+              <div className="p-3 bg-white/95 dark:bg-slate-900/95 border-2 border-pink-300/80 dark:border-pink-800/80 rounded-3xl shadow-lg space-y-4 animate-fadeIn" id="ai-detector-wrapper">
+                <AIPlaqueDetector onApplyToOHIS={handleApplyAIToOHIS} isReadOnly={isReadOnly} />
+              </div>
+            )}
+
+            {/* Linked AI Badge Notification if result exists */}
+            {aiPlaqueResult && (
+              <div className="p-3 bg-gradient-to-r from-pink-50 to-purple-50 dark:from-pink-950/40 dark:to-purple-950/40 border border-pink-300 dark:border-pink-800 rounded-2xl flex items-center justify-between text-xs animate-fadeIn">
+                <div className="flex items-center gap-2 font-bold text-pink-950 dark:text-pink-200">
+                  <Sparkles className="w-4 h-4 text-pink-600" />
+                  <span>
+                    <strong>Tertaat Analisis AI CNN:</strong> Persentase Plak {aiPlaqueResult.plaquePercentage.toFixed(1)}% ({aiPlaqueResult.kategoriKebersihan}) • Nilai 6 Gigi Indeks Berhasil Ditautkan.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAiDetector(true)}
+                  className="px-2.5 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-lg font-black text-[10px] transition cursor-pointer"
+                >
+                  Buka Detail AI
+                </button>
+              </div>
+            )}
+
+            {/* Scoring Guide Banner */}
+            {showOhisGuide && (
+              <div className="p-4 bg-teal-50 dark:bg-slate-800/90 border border-teal-200 dark:border-teal-800/60 rounded-2xl text-xs space-y-3 animate-fadeIn">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <span className="font-black text-teal-950 dark:text-teal-200 uppercase tracking-wider block">Indeks Debris (DI-S)</span>
+                    <ul className="space-y-1 text-slate-700 dark:text-slate-300 text-[11px] font-medium">
+                      <li><strong className="text-emerald-700 dark:text-emerald-400">Skor 0:</strong> Tidak ada debris/stain</li>
+                      <li><strong className="text-sky-700 dark:text-sky-400">Skor 1:</strong> Debris lunak ≤ 1/3 permukaan ATAU stain ekstrinsik</li>
+                      <li><strong className="text-amber-700 dark:text-amber-400">Skor 2:</strong> Debris lunak &gt; 1/3 s/d ≤ 2/3 permukaan</li>
+                      <li><strong className="text-rose-700 dark:text-rose-400">Skor 3:</strong> Debris lunak &gt; 2/3 permukaan</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-1.5">
+                    <span className="font-black text-teal-950 dark:text-teal-200 uppercase tracking-wider block">Indeks Kalkulus (CI-S)</span>
+                    <ul className="space-y-1 text-slate-700 dark:text-slate-300 text-[11px] font-medium">
+                      <li><strong className="text-emerald-700 dark:text-emerald-400">Skor 0:</strong> Tidak ada kalkulus/karang gigi</li>
+                      <li><strong className="text-sky-700 dark:text-sky-400">Skor 1:</strong> Kalkulus supragingiva ≤ 1/3 permukaan</li>
+                      <li><strong className="text-amber-700 dark:text-amber-400">Skor 2:</strong> Kalkulus supragingiva &gt; 1/3 s/d ≤ 2/3 ATAU bintik subgingiva</li>
+                      <li><strong className="text-rose-700 dark:text-rose-400">Skor 3:</strong> Kalkulus supragingiva &gt; 2/3 ATAU pita tebal subgingiva</li>
+                    </ul>
+                  </div>
+                </div>
+                <div className="border-t border-teal-200 dark:border-slate-700 pt-2 flex flex-wrap gap-4 text-[11px] text-slate-600 dark:text-slate-400 font-bold">
+                  <span>Kategori OHI-S:</span>
+                  <span className="text-emerald-700 dark:text-emerald-400">Baik: 0.0 - 1.2</span>
+                  <span className="text-amber-700 dark:text-amber-400">Sedang: 1.3 - 3.0</span>
+                  <span className="text-rose-700 dark:text-rose-400">Buruk: 3.1 - 6.0</span>
+                </div>
+              </div>
+            )}
+
+            {/* Interactive 6 Index Teeth Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[
+                { key: 'tooth16_55' as const, perm: '16', prim: '55', quad: 'Atas Kanan (Molar 1)', surface: 'Permukaan Bukal (Pipi)' },
+                { key: 'tooth11_51' as const, perm: '11', prim: '51', quad: 'Atas Kanan (Insisivus 1)', surface: 'Permukaan Labial (Bibir)' },
+                { key: 'tooth26_65' as const, perm: '26', prim: '65', quad: 'Atas Kiri (Molar 1)', surface: 'Permukaan Bukal (Pipi)' },
+                { key: 'tooth36_75' as const, perm: '36', prim: '75', quad: 'Bawah Kiri (Molar 1)', surface: 'Permukaan Lingual (Lidah)' },
+                { key: 'tooth31_71' as const, perm: '31', prim: '71', quad: 'Bawah Kiri (Insisivus 1)', surface: 'Permukaan Labial (Bibir)' },
+                { key: 'tooth46_85' as const, perm: '46', prim: '85', quad: 'Bawah Kanan (Molar 1)', surface: 'Permukaan Lingual (Lidah)' },
+              ].map((tooth) => {
+                const toothData = ohisState[tooth.key];
+                const isPrimary = toothData.isPrimaryUsed;
+                const activeNum = isPrimary ? tooth.prim : tooth.perm;
+
+                return (
+                  <div key={tooth.key} className="bg-white/80 dark:bg-slate-900/90 border border-teal-200/80 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-black text-slate-900 dark:text-slate-100">Gigi {activeNum}</span>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${isPrimary ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200' : 'bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200'}`}>
+                            {isPrimary ? 'Sulung (Pengganti)' : 'Tetap'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">{tooth.quad} • {tooth.surface}</p>
+                      </div>
+
+                      {/* Toggle Permanent vs Primary */}
+                      <button
+                        type="button"
+                        onClick={() => handleOhisToothChange(tooth.key, 'isPrimaryUsed', !isPrimary)}
+                        className="text-[10px] font-bold text-teal-700 dark:text-teal-300 hover:underline cursor-pointer"
+                      >
+                        Ubah ke Gigi {isPrimary ? `Tetap (${tooth.perm})` : `Sulung (${tooth.prim})`}
+                      </button>
+                    </div>
+
+                    {/* Debris Score Selector */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                        <span>Debris (DI-S):</span>
+                        <span className="font-mono text-teal-700 dark:text-teal-300 font-extrabold">{toothData.debrisScore}</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {[0, 1, 2, 3].map(score => (
+                          <button
+                            key={score}
+                            type="button"
+                            onClick={() => handleOhisToothChange(tooth.key, 'debrisScore', score)}
+                            className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                              toothData.debrisScore === score
+                                ? 'bg-teal-600 text-white border-teal-700 shadow-xs scale-105'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-teal-50'
+                            }`}
+                          >
+                            {score}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Calculus Score Selector */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                        <span>Kalkulus (CI-S):</span>
+                        <span className="font-mono text-teal-700 dark:text-teal-300 font-extrabold">{toothData.calculusScore}</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {[0, 1, 2, 3].map(score => (
+                          <button
+                            key={score}
+                            type="button"
+                            onClick={() => handleOhisToothChange(tooth.key, 'calculusScore', score)}
+                            className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                              toothData.calculusScore === score
+                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs scale-105'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-emerald-50'
+                            }`}
+                          >
+                            {score}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* OHI-S Calculated Score Banner */}
+            <div className="bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-800/80 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="grid grid-cols-3 gap-4 text-center sm:text-left w-full sm:w-auto">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">Indeks Debris (DI-S)</span>
+                  <span className="text-lg font-black font-mono text-teal-700 dark:text-teal-300">{ohisState.disScore.toFixed(2)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">Indeks Kalkulus (CI-S)</span>
+                  <span className="text-lg font-black font-mono text-emerald-700 dark:text-emerald-300">{ohisState.cisScore.toFixed(2)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">Total OHI-S</span>
+                  <span className="text-lg font-black font-mono text-slate-900 dark:text-slate-100">{ohisState.ohisScore.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 px-4 py-2.5 rounded-xl w-full sm:w-auto justify-center sm:justify-start">
+                <span className="text-xs font-black text-slate-700 dark:text-slate-300">Kategori OHI-S:</span>
+                <span className={`px-3 py-1 rounded-full text-xs font-black font-mono shadow-xs ${
+                  ohisState.kategori === 'Baik'
+                    ? 'bg-emerald-500 text-white'
+                    : ohisState.kategori === 'Sedang'
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-rose-500 text-white'
+                }`}>
+                  {ohisState.kategori.toUpperCase()}
+                </span>
+              </div>
+            </div>
+          </div>
+
           {/* Aggregates Summary */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Gigi Sulung Summary */}
@@ -1376,11 +1674,15 @@ export default function DentalForm({ onSaveRespondent, nextRespondentNumber }: D
           <button
             type="submit"
             id="submit-btn-form"
-            disabled={saving}
-            className="flex-2 sm:flex-initial flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 disabled:from-pink-400 disabled:to-rose-400 text-white text-xs font-black rounded-xl shadow-lg shadow-pink-600/25 cursor-pointer transition-all uppercase tracking-wider"
+            disabled={saving || isReadOnly}
+            className={`flex-2 sm:flex-initial flex items-center justify-center gap-2 px-6 py-3 text-white text-xs font-black rounded-xl shadow-lg transition-all uppercase tracking-wider ${
+              isReadOnly 
+                ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-80' 
+                : 'bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 disabled:from-pink-400 disabled:to-rose-400 cursor-pointer shadow-pink-600/25'
+            }`}
           >
-            <Save className="w-4 h-4" />
-            {saving ? 'Menyimpan...' : 'Simpan Data'}
+            {isReadOnly ? <Eye className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            {isReadOnly ? 'Sesi Pelihat (Read-Only)' : saving ? 'Menyimpan...' : 'Simpan Data'}
           </button>
         </div>
       </div>

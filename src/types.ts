@@ -24,6 +24,50 @@ export interface PermanentTeethState {
   lainLain: number;                  // Lain-lain
 }
 
+export interface OHISToothDebrisCalculus {
+  isPrimaryUsed?: boolean; // true if using primary tooth replacement (55, 51, 65, 75, 71, 85)
+  debrisScore: number;     // 0, 1, 2, 3
+  calculusScore: number;   // 0, 1, 2, 3
+}
+
+export interface AIPlaqueAnalysisResult {
+  timestamp: string;
+  imageUrl?: string;
+  plaquePercentage: number;          // 0-100%
+  debrisIndexScore: number;          // 0, 1, 2, or 3
+  kategoriKebersihan: 'Baik' | 'Sedang' | 'Buruk';
+  indexTeethScores: {
+    gigi16: number;
+    gigi11: number;
+    gigi26: number;
+    gigi36: number;
+    gigi31: number;
+    gigi46: number;
+  };
+  areaDistribution: {
+    servikalPct: number;
+    tengahPct: number;
+    insisalPct: number;
+  };
+  kalibrasiPTUPT: string;            // Standar Kalibrasi Modifikasi Plak Indeks PTUPT Kemenkes RI
+  rekomendasiEdukasi: string[];
+}
+
+export interface OHISState {
+  tooth16_55: OHISToothDebrisCalculus; // 16 (Bukal) / 55 (Bukal)
+  tooth11_51: OHISToothDebrisCalculus; // 11 (Labial) / 51 (Labial)
+  tooth26_65: OHISToothDebrisCalculus; // 26 (Bukal) / 65 (Bukal)
+  tooth36_75: OHISToothDebrisCalculus; // 36 (Lingual) / 75 (Lingual)
+  tooth31_71: OHISToothDebrisCalculus; // 31 (Labial) / 71 (Labial)
+  tooth46_85: OHISToothDebrisCalculus; // 46 (Lingual) / 85 (Lingual)
+  
+  disScore: number; // Mean debris index score (0-3.0)
+  cisScore: number; // Mean calculus index score (0-3.0)
+  ohisScore: number; // disScore + cisScore (0-6.0)
+  kategori: 'Baik' | 'Sedang' | 'Buruk'; // Baik: 0.0-1.2, Sedang: 1.3-3.0, Buruk: 3.1-6.0
+  aiPlaqueAnalysis?: AIPlaqueAnalysisResult;
+}
+
 export interface MukosaState {
   gusiBerdarah: boolean;             // Gusi berdarah
   lesiMukosaOral: boolean;           // Lesi Mukosa Oral
@@ -58,6 +102,8 @@ export interface RespondentData {
   // Indices (calculated)
   deft: number; // d + e + f
   dmft: number; // D + M + F
+  ohis?: OHISState; // OHI-S Debris & Calculus Indices State
+  aiPlaqueAnalysis?: AIPlaqueAnalysisResult; // Hasil Deteksi AI CNN Plak & Debris Kemenkes RI
   
   // Mukosa & RTL
   mukosa: MukosaState;
