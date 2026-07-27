@@ -16,7 +16,11 @@ import {
   ArrowUpDown,
   Stethoscope,
   Sparkles,
-  Info
+  Info,
+  GitCompare,
+  Check,
+  XCircle,
+  BookOpen
 } from 'lucide-react';
 import { RespondentData } from '../types';
 import { 
@@ -25,6 +29,11 @@ import {
   exportQuantitativePdf, 
   exportQuantitativeExcel 
 } from '../lib/surveyEngine';
+import { 
+  calculateBivariateAnalysis, 
+  exportBivariatePdf, 
+  exportBivariateExcel 
+} from '../lib/bivariateEngine';
 
 interface QuantitativeAnalysisProps {
   respondents: RespondentData[];
@@ -32,12 +41,17 @@ interface QuantitativeAnalysisProps {
 }
 
 export default function QuantitativeAnalysis({ respondents, sessionName }: QuantitativeAnalysisProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'age' | 'gender' | 'demographics' | 'individual'>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'bivariate' | 'age' | 'gender' | 'demographics' | 'individual'>('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAgeFilter, setSelectedAgeFilter] = useState<string>('all');
   const [selectedGenderFilter, setSelectedGenderFilter] = useState<string>('all');
 
+  // Bivariate Variable Selector State
+  const [bivariateVarX, setBivariateVarX] = useState<'kelompokUmur' | 'jenisKelamin' | 'pendidikan' | 'pekerjaan'>('jenisKelamin');
+  const [bivariateVarY, setBivariateVarY] = useState<'statusKaries' | 'keparahanDMFT' | 'gusiBerdarah' | 'lesiMukosa' | 'rencanaRujukan'>('statusKaries');
+
   const metrics = calculateQuantitativeAnalysis(respondents);
+  const bivariateResult = calculateBivariateAnalysis(respondents, bivariateVarX, bivariateVarY);
 
   const handleExportPdf = () => {
     if (respondents.length === 0) {
@@ -212,6 +226,19 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
         >
           <Activity className="w-4 h-4" />
           Formulasi & Indeks Utama
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('bivariate')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'bivariate'
+              ? 'bg-pink-600 text-white shadow-md shadow-pink-600/30 ring-2 ring-pink-400/50'
+              : 'bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 hover:bg-pink-50 dark:hover:bg-slate-700 border border-pink-200 dark:border-slate-700'
+          }`}
+          id="subtab-quant-bivariate"
+        >
+          <GitCompare className="w-4 h-4 text-pink-300" />
+          Analisis Bivariat (Uji Chi-Square & T-Test)
         </button>
 
         <button
@@ -451,6 +478,322 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* Sub-Tab: ANALISIS BIVARIAT (UJI HIPOTESIS CHI-SQUARE & T-TEST) */}
+      {activeSubTab === 'bivariate' && (
+        <div className="space-y-6">
+          {/* Controls & Variable Selector Header */}
+          <div className="bg-gradient-to-br from-slate-900 via-pink-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-pink-500/30">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-pink-500/20">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="bg-pink-500/20 text-pink-300 font-extrabold text-[10px] px-3 py-1 rounded-full uppercase tracking-wider border border-pink-500/30">
+                    Modul Penelitian Bivariat
+                  </span>
+                  <span className="bg-emerald-500/20 text-emerald-300 font-bold text-[10px] px-2.5 py-1 rounded-full border border-emerald-500/30">
+                    Uji Chi-Square &amp; Odds Ratio
+                  </span>
+                </div>
+                <h2 className="text-xl font-black mt-2 flex items-center gap-2">
+                  <GitCompare className="w-6 h-6 text-pink-400" />
+                  Uji Hubungan Bivariat Antar Variabel Research
+                </h2>
+                <p className="text-xs text-pink-200/80 mt-1">
+                  Pilih Variabel X (Faktor Risiko / Independen) dan Variabel Y (Outcome Klinis / Dependen) untuk menguji hipotesis statistik secara otomatis.
+                </p>
+              </div>
+
+              {/* Bivariate Export Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => exportBivariatePdf(bivariateResult, sessionName)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-black rounded-2xl shadow-lg transition-all cursor-pointer hover:scale-105"
+                  id="btn-export-bivariate-pdf"
+                >
+                  <FileDown className="w-4 h-4" />
+                  <span>PDF Bivariat</span>
+                </button>
+                <button
+                  onClick={() => exportBivariateExcel(bivariateResult, sessionName)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-2xl shadow-lg transition-all cursor-pointer hover:scale-105"
+                  id="btn-export-bivariate-excel"
+                >
+                  <FileDown className="w-4 h-4" />
+                  <span>Excel Bivariat</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Variable Selectors */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              {/* Variable X Selector */}
+              <div className="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10">
+                <label className="block text-xs font-extrabold text-pink-300 uppercase tracking-wider mb-2 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-pink-500 text-white font-black flex items-center justify-center text-[10px]">X</span>
+                  Variabel Independen (Faktor Risiko / Demografi)
+                </label>
+                <select
+                  value={bivariateVarX}
+                  onChange={(e) => setBivariateVarX(e.target.value as any)}
+                  className="w-full bg-slate-900/90 text-white font-bold text-xs p-3 rounded-xl border border-pink-500/40 focus:ring-2 focus:ring-pink-400 outline-none cursor-pointer"
+                  id="select-bivariate-var-x"
+                >
+                  <option value="jenisKelamin">Jenis Kelamin (Laki-laki vs Perempuan)</option>
+                  <option value="kelompokUmur">Kelompok Umur (5-10, 10-18, 18-60, 60+)</option>
+                  <option value="pendidikan">Tingkat Pendidikan Terakhir</option>
+                  <option value="pekerjaan">Sektor Pekerjaan / Aktivitas</option>
+                </select>
+                <p className="text-[11px] text-slate-300 mt-2">
+                  Mengelompokkan data responden berdasarkan kategori pembanding sosial/demografi.
+                </p>
+              </div>
+
+              {/* Variable Y Selector */}
+              <div className="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10">
+                <label className="block text-xs font-extrabold text-pink-300 uppercase tracking-wider mb-2 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-purple-500 text-white font-black flex items-center justify-center text-[10px]">Y</span>
+                  Variabel Dependen (Outcome Klinis Gigi &amp; Mulut)
+                </label>
+                <select
+                  value={bivariateVarY}
+                  onChange={(e) => setBivariateVarY(e.target.value as any)}
+                  className="w-full bg-slate-900/90 text-white font-bold text-xs p-3 rounded-xl border border-purple-500/40 focus:ring-2 focus:ring-purple-400 outline-none cursor-pointer"
+                  id="select-bivariate-var-y"
+                >
+                  <option value="statusKaries">Status Karies (Karies Aktif vs Bebas Karies)</option>
+                  <option value="keparahanDMFT">Keparahan DMFT WHO (Rendah &lt;2.7 vs Tinggi &ge;2.7)</option>
+                  <option value="gusiBerdarah">Kesehatan Gusi (Gusi Berdarah vs Normal)</option>
+                  <option value="lesiMukosa">Lesi Mukosa Oral (Ada Lesi vs Normal)</option>
+                  <option value="rencanaRujukan">Status Rujukan Faskes (Memerlukan Rujukan vs Tidak)</option>
+                </select>
+                <p className="text-[11px] text-slate-300 mt-2">
+                  Indikator status kesehatan gigi atau kebutuhan perawatan yang diuji hubungannya.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Test Statistic KPI Summary */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            
+            {/* Chi Square */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-pink-200 dark:border-pink-900/40 shadow-sm">
+              <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Nilai Chi-Square (χ²)</span>
+              <div className="flex items-baseline justify-between mt-2">
+                <span className="text-2xl font-black text-slate-900 dark:text-slate-100">{bivariateResult.chiSquare.toFixed(3)}</span>
+                <span className="text-[10px] font-extrabold bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300 px-2 py-0.5 rounded-full">
+                  df = {bivariateResult.df}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Uji Independensi Pearson</p>
+            </div>
+
+            {/* p-value */}
+            <div className={`p-5 rounded-3xl border shadow-sm ${bivariateResult.isSignificant ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800' : 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800'}`}>
+              <span className="text-[10px] font-extrabold text-slate-600 dark:text-slate-300 uppercase tracking-wider">p-value (Asymp. Sig)</span>
+              <div className="flex items-baseline justify-between mt-2">
+                <span className={`text-2xl font-black ${bivariateResult.isSignificant ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                  {bivariateResult.pValue < 0.001 ? '< 0.001' : bivariateResult.pValue.toFixed(3)}
+                </span>
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${bivariateResult.isSignificant ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'}`}>
+                  α = 0.05
+                </span>
+              </div>
+              <div className="flex items-center gap-1 mt-1">
+                {bivariateResult.isSignificant ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                )}
+                <span className="text-[11px] font-black">{bivariateResult.isSignificant ? 'Hubungan Signifikan (H₀ Ditolak)' : 'Tidak Signifikan (H₀ Diterima)'}</span>
+              </div>
+            </div>
+
+            {/* Odds Ratio OR */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-pink-200 dark:border-pink-900/40 shadow-sm">
+              <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Odds Ratio (OR) / Risiko</span>
+              <div className="flex items-baseline justify-between mt-2">
+                <span className="text-2xl font-black text-purple-600 dark:text-purple-400">
+                  {bivariateResult.oddsRatio !== undefined ? bivariateResult.oddsRatio.toFixed(2) : '-'}
+                </span>
+                {bivariateResult.is2x2 && (
+                  <span className="text-[10px] font-bold text-purple-600 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded">Tabel 2x2</span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                {bivariateResult.orCiLower && bivariateResult.orCiUpper ? `95% CI: ${bivariateResult.orCiLower.toFixed(2)} - ${bivariateResult.orCiUpper.toFixed(2)}` : 'Memerlukan format 2x2'}
+              </p>
+            </div>
+
+            {/* T-Test Mean Comparison */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-pink-200 dark:border-pink-900/40 shadow-sm">
+              <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Uji T-Test (Beda Mean DMFT)</span>
+              <div className="flex items-baseline justify-between mt-2">
+                <span className="text-2xl font-black text-blue-600 dark:text-blue-400">
+                  {bivariateResult.tTest ? `t = ${bivariateResult.tTest.tValue.toFixed(2)}` : '-'}
+                </span>
+                {bivariateResult.tTest && (
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${bivariateResult.tTest.isSignificant ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-800'}`}>
+                    {bivariateResult.tTest.isSignificant ? 'p < 0.05' : 'p ≥ 0.05'}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                {bivariateResult.tTest ? `df = ${bivariateResult.tTest.df}, p = ${bivariateResult.tTest.pValue.toFixed(3)}` : 'Perbandingan 2 Kelompok'}
+              </p>
+            </div>
+
+          </div>
+
+          {/* Contingency Table (Crosstab) */}
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm">
+            <div className="flex items-center justify-between pb-4 border-b border-pink-100 dark:border-slate-800 mb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <BarChart2 className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+                  Tabel Kontingensi Crosstabulation: {bivariateResult.varXLabel} vs {bivariateResult.varYLabel}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Menampilkan frekuensi teramati (Observed Count), nilai harapan (Expected Count), serta persentase baris &amp; kolom.
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-900 text-white font-extrabold border-b border-slate-700">
+                    <th className="p-3 rounded-tl-2xl">{bivariateResult.varXLabel} (X)</th>
+                    {bivariateResult.categoriesY.map(catY => (
+                      <th key={catY} className="p-3 text-center">
+                        {catY}
+                        <span className="block text-[10px] font-normal text-slate-300">Observed (Expected)</span>
+                      </th>
+                    ))}
+                    <th className="p-3 text-right rounded-tr-2xl">Total N (%)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-pink-100 dark:divide-slate-800 font-medium">
+                  {bivariateResult.categoriesX.map((catX, rIdx) => {
+                    const rowTotal = bivariateResult.rowTotals[rIdx];
+                    const rowTotalPct = ((rowTotal / bivariateResult.grandTotal) * 100).toFixed(1);
+
+                    return (
+                      <tr key={catX} className="hover:bg-pink-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                        <td className="p-3 font-black text-slate-900 dark:text-slate-100 border-r border-pink-100 dark:border-slate-800 bg-pink-50/30 dark:bg-slate-800/30">
+                          {catX}
+                        </td>
+
+                        {bivariateResult.categoriesY.map((_, cIdx) => {
+                          const cell = bivariateResult.matrix[rIdx][cIdx];
+                          return (
+                            <td key={cIdx} className="p-3 text-center border-r border-pink-100 dark:border-slate-800">
+                              <div className="font-black text-sm text-slate-900 dark:text-slate-100">
+                                {cell.observed} <span className="text-xs text-slate-500 font-normal">({cell.expected.toFixed(1)})</span>
+                              </div>
+                              <div className="text-[10px] text-pink-600 dark:text-pink-400 font-bold mt-0.5">
+                                % Baris: {cell.rowPct.toFixed(1)}%
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                % Kolom: {cell.colPct.toFixed(1)}%
+                              </div>
+                            </td>
+                          );
+                        })}
+
+                        <td className="p-3 text-right font-black text-slate-900 dark:text-slate-100 bg-pink-50/20 dark:bg-slate-800/20">
+                          <div>{rowTotal} org</div>
+                          <div className="text-[10px] text-slate-500 font-bold">{rowTotalPct}%</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-100 dark:bg-slate-800 font-black text-slate-900 dark:text-slate-100 border-t-2 border-pink-300 dark:border-pink-800">
+                    <td className="p-3">Total Populasi (N)</td>
+                    {bivariateResult.categoriesY.map((_, cIdx) => {
+                      const colTotal = bivariateResult.colTotals[cIdx];
+                      const colTotalPct = ((colTotal / bivariateResult.grandTotal) * 100).toFixed(1);
+                      return (
+                        <td key={cIdx} className="p-3 text-center">
+                          <div>{colTotal} org</div>
+                          <div className="text-[10px] text-pink-600 dark:text-pink-400 font-bold">{colTotalPct}%</div>
+                        </td>
+                      );
+                    })}
+                    <td className="p-3 text-right text-pink-600 dark:text-pink-400 font-extrabold">
+                      {bivariateResult.grandTotal} (100%)
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* Group Means & Continuous Variables Comparison (DMF-T & deft) */}
+          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm">
+            <h3 className="text-base font-black text-slate-900 dark:text-slate-100 mb-2 flex items-center gap-2">
+              <Stethoscope className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+              Perbandingan Rata-rata &amp; Standar Deviasi Indeks Karies Per Kelompok
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Distribusi nilai kontinu DMF-T (gigi tetap) dan def-t (gigi sulung) berdasarkan variabel {bivariateResult.varXLabel}.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {bivariateResult.groupMeans.map(g => (
+                <div key={g.category} className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-pink-200/50 dark:border-slate-700">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700 mb-2">
+                    <span className="text-xs font-black text-slate-900 dark:text-slate-100">{g.category}</span>
+                    <span className="text-[10px] font-bold bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300 px-2 py-0.5 rounded-full">
+                      N = {g.n}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 text-[11px]">Rata-rata DMF-T:</span>
+                      <span className="font-mono font-black text-pink-600 dark:text-pink-400">{g.meanDMFT.toFixed(2)} ± {g.sdDMFT.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 text-[11px]">Rata-rata def-t:</span>
+                      <span className="font-mono font-black text-rose-600 dark:text-rose-400">{g.meanDeft.toFixed(2)} ± {g.sdDeft.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Academic Narrative Interpretation Box */}
+          <div className="bg-gradient-to-r from-pink-50 via-rose-50 to-purple-50 dark:from-slate-900 dark:via-pink-950/40 dark:to-slate-900 border-2 border-pink-300/80 dark:border-pink-800/60 rounded-3xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 pb-3 border-b border-pink-200 dark:border-pink-900/60 mb-3">
+              <BookOpen className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+              <div>
+                <h4 className="text-sm font-black text-slate-900 dark:text-slate-100">
+                  Interpretasi &amp; Pembahasan Hasil Penelitian (Naratif Akademik Skripsi/Jurnal)
+                </h4>
+                <p className="text-[11px] text-pink-700 dark:text-pink-300 font-bold">
+                  Diformulasikan secara otomatis sesuai standar penulisan metodologi penelitian epidemiologi.
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-medium bg-white/60 dark:bg-slate-950/60 p-4 rounded-2xl border border-pink-200/50 dark:border-pink-900/30">
+              "{bivariateResult.narrativeInterpretation}"
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-[11px] font-bold text-slate-600 dark:text-slate-400">
+              <span className="flex items-center gap-1 bg-white/80 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-pink-200 dark:border-slate-700">
+                <CheckCircle2 className="w-3.5 h-3.5 text-pink-600" /> Tingkat Kepercayaan: 95% (α = 0.05)
+              </span>
+              <span className="flex items-center gap-1 bg-white/80 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-pink-200 dark:border-slate-700">
+                <Info className="w-3.5 h-3.5 text-purple-600" /> Sampel Teranalisis: N = {bivariateResult.grandTotal} Responden
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
