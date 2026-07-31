@@ -76,7 +76,7 @@ export default function SessionManager({
   const handleLoadMock = () => {
     const mock = generateMockRespondents();
     onLoadMockData(mock);
-    setSuccessMsg('100 Data survey simulasi (25 Anak, 25 Remaja, 25 Dewasa, 25 Lansia) berhasil diunggah ke Cloud!');
+    setSuccessMsg('150 Data survey simulasi WHO (30 Balita 0-4, 30 Anak 5-11, 30 Remaja 12-17, 30 Dewasa 18-59, 30 Lansia 60+) berhasil diunggah ke Cloud!');
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 

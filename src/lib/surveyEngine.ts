@@ -215,6 +215,28 @@ export interface SurveyStats {
   };
 }
 
+// --- WHO Standard Age Group Helper Functions ---
+export function getAgeGroupValue(val: number): RespondentData['kelompokUmur'] {
+  if (val < 5) return '0-4';
+  if (val >= 5 && val <= 11) return '5-11';
+  if (val >= 12 && val <= 17) return '12-17';
+  if (val >= 18 && val <= 59) return '18-59';
+  return '60+';
+}
+
+export function normalizeAgeGroup(ag?: string, ageNum?: number): '0-4' | '5-11' | '12-17' | '18-59' | '60+' {
+  if (ag === '0-4' || ag === '5-11' || ag === '12-17' || ag === '18-59' || ag === '60+') {
+    return ag;
+  }
+  if (ag === '5-10') return '5-11';
+  if (ag === '10-18') return '12-17';
+  if (ag === '18-60') return '18-59';
+  if (typeof ageNum === 'number' && !isNaN(ageNum)) {
+    return getAgeGroupValue(ageNum);
+  }
+  return '18-59';
+}
+
 export function calculateSurveyStats(respondents: RespondentData[]): SurveyStats {
   const total = respondents.length;
   
@@ -226,7 +248,7 @@ export function calculateSurveyStats(respondents: RespondentData[]): SurveyStats
     pekerjaanFilledCount: 0,
     genderBreakdown: { 'Laki-laki': 0, 'Perempuan': 0 },
     genderFilledCount: 0,
-    ageGroupBreakdown: { '5-10': 0, '10-18': 0, '18-60': 0, '60+': 0 },
+    ageGroupBreakdown: { '0-4': 0, '5-11': 0, '12-17': 0, '18-59': 0, '60+': 0 },
     ageGroupFilledCount: 0,
     
     gigiSulungAvg: { sehat: 0, karies: 0, dicabutKaries: 0, tumpatanKaries: 0, tumpatanTanpaKaries: 0, dicabutSebabLain: 0, fissureSealant: 0, protesaCekat: 0, tidakTumbuh: 0, lainLain: 0 },
@@ -294,9 +316,10 @@ export function calculateSurveyStats(respondents: RespondentData[]): SurveyStats
       stats.genderBreakdown[r.jenisKelamin] = (stats.genderBreakdown[r.jenisKelamin] || 0) + 1;
       stats.genderFilledCount++;
     }
-    // Breakdown Kelompok Umur
-    if (r.kelompokUmur) {
-      stats.ageGroupBreakdown[r.kelompokUmur] = (stats.ageGroupBreakdown[r.kelompokUmur] || 0) + 1;
+    // Breakdown Kelompok Umur (WHO Standard)
+    if (r.kelompokUmur || typeof r.umur === 'number') {
+      const normalizedGroup = normalizeAgeGroup(r.kelompokUmur, r.umur);
+      stats.ageGroupBreakdown[normalizedGroup] = (stats.ageGroupBreakdown[normalizedGroup] || 0) + 1;
       stats.ageGroupFilledCount++;
     }
 
@@ -431,7 +454,7 @@ export function exportToExcel(respondents: RespondentData[], sessionName: string
     'Tanggal Input': r.tanggalInput,
     'Jenis Kelamin': r.jenisKelamin,
     'Umur (Tahun)': r.umur,
-    'Kelompok Umur': r.kelompokUmur === '5-10' ? '5-10 Tahun' : r.kelompokUmur === '10-18' ? '10-18 Tahun' : r.kelompokUmur === '18-60' ? '18-60 Tahun' : '60+ Tahun',
+    'Kelompok Umur (WHO)': normalizeAgeGroup(r.kelompokUmur, r.umur) === '0-4' ? '0-4 Tahun (Balita)' : normalizeAgeGroup(r.kelompokUmur, r.umur) === '5-11' ? '5-11 Tahun (Anak)' : normalizeAgeGroup(r.kelompokUmur, r.umur) === '12-17' ? '12-17 Tahun (Remaja)' : normalizeAgeGroup(r.kelompokUmur, r.umur) === '18-59' ? '18-59 Tahun (Dewasa)' : '60+ Tahun (Lansia)',
     'Pendidikan terakhir': r.pendidikan || '-',
     'Pekerjaan': r.pekerjaan || '-',
     
@@ -864,13 +887,14 @@ export interface QuantitativeMetrics {
   
   // Tabulasi Silang Kelompok Umur
   byAgeGroup: Array<{
-    ageGroup: '5-10' | '10-18' | '18-60' | '60+';
+    ageGroup: '0-4' | '5-11' | '12-17' | '18-59' | '60+';
     label: string;
     n: number;
     pctN: number;
     meanDeft: number;
     meanDMFT: number;
     sdDMFT: number;
+    meanOHIS: number;
     sumD: number;
     sumM: number;
     sumF: number;
@@ -894,6 +918,7 @@ export interface QuantitativeMetrics {
     meanDeft: number;
     meanDMFT: number;
     sdDMFT: number;
+    meanOHIS: number;
     sumD: number;
     sumM: number;
     sumF: number;
@@ -905,6 +930,7 @@ export interface QuantitativeMetrics {
     siCIndex: number;
     gusiBerdarahPct: number;
     lesiMukosaPct: number;
+    perluDirujukPct: number;
   }>;
 
   // Tabulasi Silang Pendidikan
@@ -913,8 +939,10 @@ export interface QuantitativeMetrics {
     n: number;
     meanDMFT: number;
     meanDeft: number;
+    meanOHIS: number;
     cariesPrevalencePct: number;
     careIndexPct: number;
+    perluDirujukPct: number;
   }>;
 
   // Tabulasi Silang Pekerjaan
@@ -923,8 +951,10 @@ export interface QuantitativeMetrics {
     n: number;
     meanDMFT: number;
     meanDeft: number;
+    meanOHIS: number;
     cariesPrevalencePct: number;
     careIndexPct: number;
+    perluDirujukPct: number;
   }>;
 }
 
@@ -972,7 +1002,7 @@ export function calculateQuantitativeAnalysis(respondents: RespondentData[]): Qu
   const meanF = totalN > 0 ? sumF / totalN : 0;
 
   // Gigi Sulung (deft)
-  const childrenFilter = respondents.filter(r => r.kelompokUmur === '5-10' || r.umur <= 10 || (r.deft && r.deft > 0));
+  const childrenFilter = respondents.filter(r => normalizeAgeGroup(r.kelompokUmur, r.umur) === '0-4' || normalizeAgeGroup(r.kelompokUmur, r.umur) === '5-11' || r.umur <= 11 || (r.deft && r.deft > 0));
   const childCount = childrenFilter.length > 0 ? childrenFilter.length : totalN;
   const meanDeft = calcMean(deftArr);
   const sdDeft = calcSD(deftArr, meanDeft);
@@ -1032,7 +1062,7 @@ export function calculateQuantitativeAnalysis(respondents: RespondentData[]): Qu
     const subN = groupItems.length;
     if (subN === 0) {
       return {
-        n: 0, pctN: 0, meanDeft: 0, meanDMFT: 0, sdDMFT: 0,
+        n: 0, pctN: 0, meanDeft: 0, meanDMFT: 0, sdDMFT: 0, meanOHIS: 0,
         sumD: 0, sumM: 0, sumF: 0, meanD: 0, meanM: 0, meanF: 0,
         cariesPrevalencePct: 0, siCIndex: 0, careIndexPct: 0,
         gusiBerdarahPct: 0, lesiMukosaPct: 0, perluPerawatanSegeraPct: 0, perluDirujukPct: 0
@@ -1043,6 +1073,9 @@ export function calculateQuantitativeAnalysis(respondents: RespondentData[]): Qu
     const subMeanDMFT = calcMean(subDmftArr);
     const subSdDMFT = calcSD(subDmftArr, subMeanDMFT);
     const subMeanDeft = calcMean(subDeftArr);
+
+    const subOhisList = groupItems.map(r => r.ohis || generateDefaultOHIS(r));
+    const subMeanOHIS = subOhisList.reduce((acc, o) => acc + (o.ohisScore || 0), 0) / subN;
 
     const subSumD = groupItems.reduce((acc, r) => acc + (r.gigiTetap?.karies || 0), 0);
     const subSumM = groupItems.reduce((acc, r) => acc + (r.gigiTetap?.dicabutKaries || 0), 0);
@@ -1069,6 +1102,7 @@ export function calculateQuantitativeAnalysis(respondents: RespondentData[]): Qu
       meanDeft: subMeanDeft,
       meanDMFT: subMeanDMFT,
       sdDMFT: subSdDMFT,
+      meanOHIS: subMeanOHIS,
       sumD: subSumD,
       sumM: subSumM,
       sumF: subSumF,
@@ -1085,16 +1119,17 @@ export function calculateQuantitativeAnalysis(respondents: RespondentData[]): Qu
     };
   };
 
-  // Age groups
-  const ageGroups: Array<{ key: '5-10' | '10-18' | '18-60' | '60+'; label: string }> = [
-    { key: '5-10', label: 'Anak (5 - 10 Tahun)' },
-    { key: '10-18', label: 'Remaja (10 - 18 Tahun)' },
-    { key: '18-60', label: 'Dewasa (18 - 60 Tahun)' },
+  // Age groups (WHO Standard)
+  const ageGroups: Array<{ key: '0-4' | '5-11' | '12-17' | '18-59' | '60+'; label: string }> = [
+    { key: '0-4', label: 'Balita (0 - 4 Tahun)' },
+    { key: '5-11', label: 'Anak-anak (5 - 11 Tahun)' },
+    { key: '12-17', label: 'Remaja (12 - 17 Tahun)' },
+    { key: '18-59', label: 'Dewasa (18 - 59 Tahun)' },
     { key: '60+', label: 'Lansia (60+ Tahun)' }
   ];
 
   const byAgeGroup = ageGroups.map(ag => {
-    const items = respondents.filter(r => r.kelompokUmur === ag.key);
+    const items = respondents.filter(r => normalizeAgeGroup(r.kelompokUmur, r.umur) === ag.key);
     const sub = calculateSubgroup(items);
     return {
       ageGroup: ag.key,
@@ -1124,8 +1159,10 @@ export function calculateQuantitativeAnalysis(respondents: RespondentData[]): Qu
       n: sub.n,
       meanDMFT: sub.meanDMFT,
       meanDeft: sub.meanDeft,
+      meanOHIS: sub.meanOHIS,
       cariesPrevalencePct: sub.cariesPrevalencePct,
-      careIndexPct: sub.careIndexPct
+      careIndexPct: sub.careIndexPct,
+      perluDirujukPct: sub.perluDirujukPct
     };
   }).filter(item => item.n > 0);
 
@@ -1139,8 +1176,10 @@ export function calculateQuantitativeAnalysis(respondents: RespondentData[]): Qu
       n: sub.n,
       meanDMFT: sub.meanDMFT,
       meanDeft: sub.meanDeft,
+      meanOHIS: sub.meanOHIS,
       cariesPrevalencePct: sub.cariesPrevalencePct,
-      careIndexPct: sub.careIndexPct
+      careIndexPct: sub.careIndexPct,
+      perluDirujukPct: sub.perluDirujukPct
     };
   }).filter(item => item.n > 0);
 
@@ -1560,8 +1599,130 @@ export function exportQuantitativeExcel(respondents: RespondentData[], sessionNa
   XLSX.writeFile(wb, `Analisis_Kuantitatif_Kesehatan_Gigi_${cleanName}.xlsx`);
 }
 
-// 4. Generate 100 Diverse Respondents (25 Anak, 25 Remaja, 25 Dewasa, 25 Lansia)
-export function generate100DiverseRespondents(): RespondentData[] {
+// ==================== EXPORT DATASET SPSS (.XLSX PRE-CODED) ====================
+
+export function exportQuantitativeSPSS(respondents: RespondentData[], sessionName: string) {
+  const wb = XLSX.utils.book_new();
+
+  // Helper code maps for SPSS compatibility
+  const getGenderCode = (jk: string) => (jk === 'Laki-laki' ? 1 : 2);
+  const getAgeGroupCode = (ag: string) => {
+    if (ag === '0-4') return 1;
+    if (ag === '5-11') return 2;
+    if (ag === '12-17') return 3;
+    if (ag === '18-59') return 4;
+    return 5; // 60+
+  };
+  const getPendidikanCode = (p?: string) => {
+    if (!p || p === '-' || p === 'Tidak Sekolah') return 1;
+    if (p.includes('SD')) return 2;
+    if (p.includes('SMP')) return 3;
+    if (p.includes('SMA')) return 4;
+    return 5; // Perguruan Tinggi
+  };
+  const getPekerjaanCode = (pk?: string) => {
+    if (!pk || pk === '-' || pk.includes('TIDAK BEKERJA')) return 1;
+    if (pk.includes('RUMAH TANGGA')) return 2;
+    if (pk.includes('PELAJAR') || pk.includes('MAHASISWA')) return 3;
+    if (pk.includes('PNS') || pk.includes('TNI') || pk.includes('POLRI')) return 4;
+    if (pk.includes('SWASTA') || pk.includes('BURUH')) return 5;
+    return 6; // Wiraswasta/Lainnya
+  };
+  const getDmftCatCode = (dmft: number) => {
+    if (dmft < 1.2) return 1; // Sangat Rendah
+    if (dmft <= 2.6) return 2; // Rendah
+    if (dmft <= 4.4) return 3; // Sedang
+    if (dmft <= 6.5) return 4; // Tinggi
+    return 5; // Sangat Tinggi
+  };
+  const getOhisCatCode = (ohis: number) => {
+    if (ohis <= 1.2) return 1; // Baik
+    if (ohis <= 3.0) return 2; // Sedang
+    return 3; // Buruk
+  };
+
+  const rawRows = respondents.map((r, index) => {
+    const hasCaries = (r.gigiTetap?.karies > 0 || r.gigiSulung?.karies > 0) ? 1 : 0;
+    const ohis = r.ohis?.ohisScore || 0;
+    const dis = r.ohis?.disScore || 0;
+    const cis = r.ohis?.cisScore || 0;
+    const normAgeGrp = normalizeAgeGroup(r.kelompokUmur, r.umur);
+
+    return {
+      'ID': index + 1,
+      'NIK': r.nik || '',
+      'NAMA': r.nama || '',
+      'JK_CODE': getGenderCode(r.jenisKelamin),
+      'JK_LABEL': r.jenisKelamin,
+      'UMUR': r.umur,
+      'KEL_UMUR_CODE': getAgeGroupCode(normAgeGrp),
+      'KEL_UMUR_LABEL': normAgeGrp,
+      'PENDIDIKAN_CODE': getPendidikanCode(r.pendidikan),
+      'PEKERJAAN_CODE': getPekerjaanCode(r.pekerjaan),
+      'D_SULUNG': r.gigiSulung?.karies || 0,
+      'E_SULUNG': r.gigiSulung?.dicabutKaries || 0,
+      'F_SULUNG': r.gigiSulung?.tumpatanTanpaKaries || 0,
+      'DEFT_SCORE': r.deft || 0,
+      'D_TETAP': r.gigiTetap?.karies || 0,
+      'M_TETAP': r.gigiTetap?.dicabutKaries || 0,
+      'F_TETAP': r.gigiTetap?.tumpatanTanpaKaries || 0,
+      'DMFT_SCORE': r.dmft || 0,
+      'DMFT_CAT_CODE': getDmftCatCode(r.dmft || 0),
+      'DIS_SCORE': Number(dis.toFixed(2)),
+      'CIS_SCORE': Number(cis.toFixed(2)),
+      'OHIS_SCORE': Number(ohis.toFixed(2)),
+      'OHIS_CAT_CODE': getOhisCatCode(ohis),
+      'KARIES_STATUS': hasCaries,
+      'GUSI_BERDARAH': r.mukosa?.gusiBerdarah ? 1 : 0,
+      'LESI_MUKOSA': r.mukosa?.lesiMukosaOral ? 1 : 0,
+      'PERLU_RUJUKAN': r.tindakLanjut?.perluDirujuk ? 1 : 0,
+      'PERAWATAN_SEGERA': r.tindakLanjut?.perluPerawatanSegera ? 1 : 0,
+    };
+  });
+
+  const wsRaw = XLSX.utils.json_to_sheet(rawRows);
+  XLSX.utils.book_append_sheet(wb, wsRaw, 'SPSS_Raw_Data');
+
+  // Sheet 2: Variable View Dictionary for SPSS
+  const varViewRows = [
+    ['Name', 'Type', 'Width', 'Decimals', 'Label', 'Values / Coding Dictionary'],
+    ['ID', 'Numeric', 8, 0, 'Nomor Responden', '1..N'],
+    ['NIK', 'String', 16, 0, 'Nomor Induk Kependudukan', '-'],
+    ['NAMA', 'String', 50, 0, 'Nama Lengkap Responden', '-'],
+    ['JK_CODE', 'Numeric', 1, 0, 'Jenis Kelamin', '1 = Laki-laki; 2 = Perempuan'],
+    ['UMUR', 'Numeric', 3, 0, 'Umur Responden (Tahun)', 'Kontinu (Tahun)'],
+    ['KEL_UMUR_CODE', 'Numeric', 1, 0, 'Kelompok Umur WHO', '1 = 0-4 thn; 2 = 5-11 thn; 3 = 12-17 thn; 4 = 18-59 thn; 5 = 60+ thn'],
+    ['PENDIDIKAN_CODE', 'Numeric', 1, 0, 'Tingkat Pendidikan', '1 = Tidak Sekolah; 2 = SD; 3 = SMP; 4 = SMA; 5 = Perguruan Tinggi'],
+    ['PEKERJAAN_CODE', 'Numeric', 1, 0, 'Sektor Pekerjaan', '1 = Tidak Bekerja; 2 = IRT; 3 = Pelajar/Mahasiswa; 4 = PNS/TNI/Polri; 5 = Swasta/Buruh; 6 = Wiraswasta/Lainnya'],
+    ['D_SULUNG', 'Numeric', 2, 0, 'Komponen d (Karies Sulung)', 'Gigi'],
+    ['E_SULUNG', 'Numeric', 2, 0, 'Komponen e (Ekstraksi Sulung)', 'Gigi'],
+    ['F_SULUNG', 'Numeric', 2, 0, 'Komponen f (Tumpatan Sulung)', 'Gigi'],
+    ['DEFT_SCORE', 'Numeric', 2, 0, 'Skor Indeks def-t Total', 'Gigi'],
+    ['D_TETAP', 'Numeric', 2, 0, 'Komponen D (Karies Tetap)', 'Gigi'],
+    ['M_TETAP', 'Numeric', 2, 0, 'Komponen M (Hilang/Dicabut)', 'Gigi'],
+    ['F_TETAP', 'Numeric', 2, 0, 'Komponen F (Tumpatan Tetap)', 'Gigi'],
+    ['DMFT_SCORE', 'Numeric', 2, 0, 'Skor Indeks DMF-T Total', 'Gigi'],
+    ['DMFT_CAT_CODE', 'Numeric', 1, 0, 'Kategori Keparahan DMF-T WHO', '1 = Sangat Rendah (<1.2); 2 = Rendah (1.2-2.6); 3 = Sedang (2.7-4.4); 4 = Tinggi (4.5-6.5); 5 = Sangat Tinggi (>6.5)'],
+    ['DIS_SCORE', 'Numeric', 4, 2, 'Debris Index Simplified (DI-S)', 'Skor 0.0 - 3.0'],
+    ['CIS_SCORE', 'Numeric', 4, 2, 'Calculus Index Simplified (CI-S)', 'Skor 0.0 - 3.0'],
+    ['OHIS_SCORE', 'Numeric', 4, 2, 'Oral Hygiene Index Simplified (OHI-S)', 'Skor 0.0 - 6.0'],
+    ['OHIS_CAT_CODE', 'Numeric', 1, 0, 'Kategori Kebersihan Mulut OHI-S', '1 = Baik (0.0-1.2); 2 = Sedang (1.3-3.0); 3 = Buruk (3.1-6.0)'],
+    ['KARIES_STATUS', 'Numeric', 1, 0, 'Status Prevalensi Karies', '0 = Bebas Karies; 1 = Karies Aktif'],
+    ['GUSI_BERDARAH', 'Numeric', 1, 0, 'Pendarahan Gusi (Gingivitis)', '0 = Tidak; 1 = Ya'],
+    ['LESI_MUKOSA', 'Numeric', 1, 0, 'Adanya Lesi Mukosa Oral', '0 = Tidak; 1 = Ya'],
+    ['PERLU_RUJUKAN', 'Numeric', 1, 0, 'Kebutuhan Rujukan Faskes', '0 = Tidak; 1 = Ya'],
+    ['PERAWATAN_SEGERA', 'Numeric', 1, 0, 'Kebutuhan Perawatan Segera', '0 = Tidak; 1 = Ya'],
+  ];
+
+  const wsVarView = XLSX.utils.aoa_to_sheet(varViewRows);
+  XLSX.utils.book_append_sheet(wb, wsVarView, 'SPSS_Variable_View');
+
+  const cleanName = sessionName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  XLSX.writeFile(wb, `Dataset_SPSS_Kesehatan_Gigi_${cleanName}.xlsx`);
+}
+
+// 4. Generate 150 Diverse Respondents divided evenly according to WHO Age Groups (30 Balita 0-4, 30 Anak 5-11, 30 Remaja 12-17, 30 Dewasa 18-59, 30 Lansia 60+)
+export function generate150DiverseRespondents(): RespondentData[] {
   const emptySulung = { sehat: 0, karies: 0, dicabutKaries: 0, tumpatanKaries: 0, tumpatanTanpaKaries: 0, dicabutSebabLain: 0, fissureSealant: 0, protesaCekat: 0, tidakTumbuh: 0, lainLain: 0 };
   const emptyTetap = { sehat: 0, karies: 0, dicabutKaries: 0, tumpatanKaries: 0, tumpatanTanpaKaries: 0, dicabutSebabLain: 0, fissureSealant: 0, protesaCekat: 0, tidakTumbuh: 0, lainLain: 0 };
 
@@ -1569,24 +1730,134 @@ export function generate100DiverseRespondents(): RespondentData[] {
   const pemeriksa = 'Arini Haerunnisa';
   const createdBy = 'derumarahlaut@gmail.com';
 
-  const rawData: Array<Omit<RespondentData, 'pemeriksa'>> = [
-    // ==================== 1. KELOMPOK ANAK (25 RESPONDEN: 5-10 thn) ====================
-    // Laki-laki (13 anak)
-    {
-      nama: 'Ahmad Fauzi', nik: '3201011506200001', jenisKelamin: 'Laki-laki', umur: 6, kelompokUmur: '5-10', pendidikan: 'SD', pekerjaan: 'PELAJAR/MAHASISWA', tanggalInput: today,
-      gigiSulung: { ...emptySulung, sehat: 12, karies: 6, dicabutKaries: 2 }, gigiTetap: { ...emptyTetap, sehat: 4 }, deft: 8, dmft: 0,
-      mukosa: { gusiBerdarah: false, lesiMukosaOral: false }, tindakLanjut: { perluPerawatanSegera: true, perluPerawatanTidakSegera: false, perluDirujuk: true, dirujukKe: 'puskesmas' }, createdBy, createdAt: new Date()
-    },
-    {
-      nama: 'Rian Hidayat', nik: '3201011003180003', jenisKelamin: 'Laki-laki', umur: 8, kelompokUmur: '5-10', pendidikan: 'SD', pekerjaan: 'PELAJAR/MAHASISWA', tanggalInput: today,
-      gigiSulung: { ...emptySulung, sehat: 10, karies: 3, dicabutKaries: 1 }, gigiTetap: { ...emptyTetap, sehat: 8, karies: 1 }, deft: 4, dmft: 1,
-      mukosa: { gusiBerdarah: true, lesiMukosaOral: false }, tindakLanjut: { perluPerawatanSegera: false, perluPerawatanTidakSegera: true, perluDirujuk: true, dirujukKe: 'puskesmas' }, createdBy, createdAt: new Date()
-    },
-    {
-      nama: 'Bagas Pratama', nik: '3201012211170005', jenisKelamin: 'Laki-laki', umur: 9, kelompokUmur: '5-10', pendidikan: 'SD', pekerjaan: 'PELAJAR/MAHASISWA', tanggalInput: today,
-      gigiSulung: { ...emptySulung, sehat: 6, karies: 7, dicabutKaries: 2 }, gigiTetap: { ...emptyTetap, sehat: 10, karies: 2 }, deft: 9, dmft: 2,
-      mukosa: { gusiBerdarah: true, lesiMukosaOral: true }, tindakLanjut: { perluPerawatanSegera: true, perluPerawatanTidakSegera: false, perluDirujuk: true, dirujukKe: 'rsgm_rskgm' }, createdBy, createdAt: new Date()
-    },
+  const maleFirstNames = ['Ahmad', 'Rian', 'Bagas', 'Kenzie', 'Muhammad', 'Fathan', 'Naufal', 'Gibran', 'Raffa', 'Daffa', 'Aksa', 'Rayyan', 'Kenzo', 'Budi', 'Hendra', 'Eko', 'Agus', 'Rahmat', 'Dimas', 'Rizky', 'Fajar', 'Reyhan', 'Aditya', 'Sastro', 'Subagyo', 'Darmo', 'Kromo', 'Subandi', 'Sujono', 'Kartono'];
+  const femaleFirstNames = ['Alika', 'Arsyila', 'Azzahra', 'Mikayla', 'Nayra', 'Qonita', 'Raisa', 'Shafeeya', 'Tania', 'Yasmin', 'Zahra', 'Anindita', 'Bella', 'Citra', 'Dania', 'Sri', 'Dewi', 'Maya', 'Siti', 'Annisa', 'Fitri', 'Nurul', 'Eka', 'Ratna', 'Karsih', 'Ginem', 'Mariyam', 'Aminah', 'Sukinah', 'Sumarni'];
+  const lastNames = ['Pratama', 'Hidayat', 'Alfarizqi', 'Alamsyah', 'Hibatullah', 'Rakabuming', 'Raditya', 'Ibnu', 'Malik', 'Syahputra', 'Santoso', 'Wijaya', 'Prasetyo', 'Setiawan', 'Febrian', 'Anggara', 'Nuraini', 'Rahmawati', 'Lestari', 'Wahyuni'];
+
+  const results: RespondentData[] = [];
+
+  // 5 WHO Age Groups: 30 respondents each (15 Male, 15 Female)
+  const ageConfigs = [
+    { group: '0-4' as const, minAge: 1, maxAge: 4 },
+    { group: '5-11' as const, minAge: 5, maxAge: 11 },
+    { group: '12-17' as const, minAge: 12, maxAge: 17 },
+    { group: '18-59' as const, minAge: 20, maxAge: 55 },
+    { group: '60+' as const, minAge: 60, maxAge: 82 },
+  ];
+
+  let idCounter = 1;
+
+  ageConfigs.forEach((cfg) => {
+    for (let i = 0; i < 30; i++) {
+      const isMale = i < 15;
+      const gender = isMale ? 'Laki-laki' : 'Perempuan';
+      const firstNameList = isMale ? maleFirstNames : femaleFirstNames;
+      const fn = firstNameList[i % firstNameList.length];
+      const ln = lastNames[(i + idCounter) % lastNames.length];
+      const name = `${fn} ${ln}`;
+      const age = cfg.minAge + (i % (cfg.maxAge - cfg.minAge + 1));
+      
+      const nik = `3201${isMale ? '01' : '41'}${String(10 + (i % 20)).padStart(2, '0')}${String(1 + (i % 12)).padStart(2, '0')}${String(80 + (age % 40)).padStart(2, '0')}00${String(idCounter).padStart(2, '0')}`;
+      
+      let deft = 0;
+      let dmft = 0;
+      let gSulung = { ...emptySulung };
+      let gTetap = { ...emptyTetap };
+
+      if (cfg.group === '0-4') {
+        const karies = 1 + (i % 5);
+        const dicabut = i % 3 === 0 ? 1 : 0;
+        const tumpatan = i % 4 === 0 ? 1 : 0;
+        deft = karies + dicabut + tumpatan;
+        gSulung = { ...emptySulung, sehat: Math.max(0, 16 - deft), karies, dicabutKaries: dicabut, tumpatanTanpaKaries: tumpatan };
+        gTetap = { ...emptyTetap };
+        dmft = 0;
+      } else if (cfg.group === '5-11') {
+        const sKaries = 1 + (i % 5);
+        const sDicabut = i % 4 === 0 ? 1 : 0;
+        deft = sKaries + sDicabut;
+        gSulung = { ...emptySulung, sehat: Math.max(0, 12 - deft), karies: sKaries, dicabutKaries: sDicabut };
+        
+        const tKaries = i % 3 === 0 ? 1 : (i % 5 === 0 ? 2 : 0);
+        dmft = tKaries;
+        gTetap = { ...emptyTetap, sehat: 12 - dmft, karies: tKaries };
+      } else if (cfg.group === '12-17') {
+        deft = 0;
+        gSulung = { ...emptySulung };
+        const karies = 1 + (i % 4);
+        const tumpatan = i % 3 === 0 ? 1 : 0;
+        dmft = karies + tumpatan;
+        gTetap = { ...emptyTetap, sehat: 28 - dmft, karies, tumpatanTanpaKaries: tumpatan };
+      } else if (cfg.group === '18-59') {
+        deft = 0;
+        gSulung = { ...emptySulung };
+        const karies = 2 + (i % 5);
+        const dicabut = 1 + (i % 3);
+        const tumpatan = i % 2 === 0 ? 2 : 0;
+        dmft = karies + dicabut + tumpatan;
+        gTetap = { ...emptyTetap, sehat: Math.max(0, 28 - dmft), karies, dicabutKaries: dicabut, tumpatanTanpaKaries: tumpatan };
+      } else {
+        // 60+
+        deft = 0;
+        gSulung = { ...emptySulung };
+        const karies = 2 + (i % 4);
+        const dicabut = 8 + (i % 15);
+        const tumpatan = i % 3 === 0 ? 1 : 0;
+        dmft = karies + dicabut + tumpatan;
+        gTetap = { ...emptyTetap, sehat: Math.max(0, 28 - dmft), karies, dicabutKaries: dicabut, tumpatanTanpaKaries: tumpatan };
+      }
+
+      const gusiBerdarah = (i % 3 === 0);
+      const lesiMukosa = (i % 7 === 0);
+      const perluPerawatanSegera = (dmft > 4 || deft > 4 || lesiMukosa);
+      const perluDirujuk = (perluPerawatanSegera || i % 4 === 0);
+      const dirujukKe = perluDirujuk ? (i % 2 === 0 ? 'puskesmas' : 'rsgm_rskgm') : 'tidak_dirujuk';
+
+      const resp: RespondentData = {
+        nama: name,
+        nik,
+        jenisKelamin: gender,
+        umur: age,
+        kelompokUmur: cfg.group,
+        pendidikan: age < 5 ? 'Tidak Sekolah' : (age < 12 ? 'SD' : (age < 15 ? 'SMP' : (age < 18 ? 'SMA' : (i % 3 === 0 ? 'S1/D4' : 'SMA')))),
+        pekerjaan: age < 5 ? 'TIDAK BEKERJA' : (age < 18 ? 'PELAJAR/MAHASISWA' : (age >= 60 ? (i % 2 === 0 ? 'TIDAK BEKERJA' : 'PENGURUS/IBU RUMAH TANGGA') : (i % 3 === 0 ? 'ASN/PNS/PPPK' : (i % 3 === 1 ? 'PEGAWAI SWASTA' : 'WIRASWASTA/WIRAUSAHA')))),
+        tanggalInput: today,
+        pemeriksa,
+        gigiSulung: gSulung,
+        gigiTetap: gTetap,
+        deft,
+        dmft,
+        mukosa: { gusiBerdarah, lesiMukosaOral: lesiMukosa },
+        tindakLanjut: {
+          perluPerawatanSegera,
+          perluPerawatanTidakSegera: !perluPerawatanSegera,
+          perluDirujuk,
+          dirujukKe
+        },
+        createdBy,
+        createdAt: new Date()
+      };
+
+      results.push(ensureOHISForRespondent(resp));
+      idCounter++;
+    }
+  });
+
+  return results;
+}
+
+export function generate100DiverseRespondents(): RespondentData[] {
+  return generate150DiverseRespondents();
+}
+
+// Retain alias for backward compatibility
+export const generate150Respondents = generate150DiverseRespondents;
+
+export function generateMockRespondents(): RespondentData[] {
+  return generate150DiverseRespondents();
+}
+
+/*
     {
       nama: 'Kenzie Alfarizqi', nik: '3201011809190007', jenisKelamin: 'Laki-laki', umur: 7, kelompokUmur: '5-10', pendidikan: 'SD', pekerjaan: 'PELAJAR/MAHASISWA', tanggalInput: today,
       gigiSulung: { ...emptySulung, sehat: 12, karies: 4 }, gigiTetap: { ...emptyTetap, sehat: 6, karies: 1 }, deft: 4, dmft: 1,
@@ -2089,17 +2360,8 @@ export function generate100DiverseRespondents(): RespondentData[] {
       gigiSulung: { ...emptySulung }, gigiTetap: { ...emptyTetap, sehat: 0, karies: 1, dicabutKaries: 29 }, deft: 0, dmft: 30,
       mukosa: { gusiBerdarah: true, lesiMukosaOral: true }, tindakLanjut: { perluPerawatanSegera: true, perluPerawatanTidakSegera: false, perluDirujuk: true, dirujukKe: 'rsgm_rskgm' }, createdBy, createdAt: new Date()
     }
-  ];
-
-  return rawData.map(r => ensureOHISForRespondent({
-    ...r,
-    pemeriksa
-  } as RespondentData));
-}
-
-export function generateMockRespondents(): RespondentData[] {
-  return generate100DiverseRespondents();
-}
+*/
+  // End of legacy dataset
 
 export interface DetailedAge {
   years: number;

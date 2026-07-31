@@ -92,11 +92,11 @@ export function chiSquarePValue(chiSq: number, df: number): number {
 export function calculateBivariateAnalysis(
   respondents: RespondentData[],
   varXKey: 'kelompokUmur' | 'jenisKelamin' | 'pendidikan' | 'pekerjaan' | 'kategoriOHIS',
-  varYKey: 'statusKaries' | 'keparahanDMFT' | 'kategoriOHIS' | 'statusOHIS' | 'gusiBerdarah' | 'lesiMukosa' | 'rencanaRujukan'
+  varYKey: 'statusKaries' | 'keparahanDMFT' | 'kategoriOHIS' | 'statusOHIS' | 'gusiBerdarah' | 'lesiMukosa' | 'rencanaRujukan' | 'perluPerawatanSegera'
 ): BivariateResult {
   // Label mappings
   const varXLabels: Record<string, string> = {
-    kelompokUmur: 'Kelompok Umur',
+    kelompokUmur: 'Kelompok Umur (WHO)',
     jenisKelamin: 'Jenis Kelamin',
     pendidikan: 'Tingkat Pendidikan',
     pekerjaan: 'Sektor Pekerjaan',
@@ -110,12 +110,27 @@ export function calculateBivariateAnalysis(
     statusOHIS: 'Status OHI-S (Sedang/Buruk vs Baik)',
     gusiBerdarah: 'Gusi Berdarah (Gingival Bleeding)',
     lesiMukosa: 'Lesi Mukosa Oral',
-    rencanaRujukan: 'Status Rujukan Faskes'
+    rencanaRujukan: 'Status Rujukan Faskes',
+    perluPerawatanSegera: 'Kebutuhan Perawatan Segera (Urgent Treatment)'
   };
 
   // Helper to extract category values for X
   const getXValue = (r: RespondentData): string => {
-    if (varXKey === 'kelompokUmur') return r.kelompokUmur || 'Tidak Terdata';
+    if (varXKey === 'kelompokUmur') {
+      const ag = r.kelompokUmur;
+      if (ag === '0-4' || ag === '5-11' || ag === '12-17' || ag === '18-59' || ag === '60+') return ag;
+      if (ag === '5-10') return '5-11';
+      if (ag === '10-18') return '12-17';
+      if (ag === '18-60') return '18-59';
+      if (typeof r.umur === 'number') {
+        if (r.umur < 5) return '0-4';
+        if (r.umur <= 11) return '5-11';
+        if (r.umur <= 17) return '12-17';
+        if (r.umur <= 59) return '18-59';
+        return '60+';
+      }
+      return '18-59';
+    }
     if (varXKey === 'jenisKelamin') return r.jenisKelamin || 'Tidak Terdata';
     if (varXKey === 'pendidikan') return r.pendidikan || 'Lainnya';
     if (varXKey === 'pekerjaan') return r.pekerjaan || 'Lainnya';
@@ -152,6 +167,9 @@ export function calculateBivariateAnalysis(
     if (varYKey === 'rencanaRujukan') {
       return (r.tindakLanjut?.dirujukKe && r.tindakLanjut.dirujukKe !== 'tidak_dirujuk') ? 'Memerlukan Rujukan' : 'Tidak Dirujuk';
     }
+    if (varYKey === 'perluPerawatanSegera') {
+      return r.tindakLanjut?.perluPerawatanSegera ? 'Perlu Perawatan Segera' : 'Perlu Perawatan Tidak Segera';
+    }
     return 'Lainnya';
   };
 
@@ -161,7 +179,7 @@ export function calculateBivariateAnalysis(
 
   // Custom ordering for X
   if (varXKey === 'kelompokUmur') {
-    const order = ['5-10', '10-18', '18-60', '60+'];
+    const order = ['0-4', '5-11', '12-17', '18-59', '60+'];
     categoriesX.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   } else if (varXKey === 'jenisKelamin') {
     const order = ['Laki-laki', 'Perempuan'];
@@ -186,6 +204,8 @@ export function calculateBivariateAnalysis(
     categoriesY = ['Ada Lesi Mukosa', 'Normal / Tanpa Lesi'];
   } else if (varYKey === 'rencanaRujukan') {
     categoriesY = ['Memerlukan Rujukan', 'Tidak Dirujuk'];
+  } else if (varYKey === 'perluPerawatanSegera') {
+    categoriesY = ['Perlu Perawatan Segera', 'Perlu Perawatan Tidak Segera'];
   }
 
   const grandTotal = respondents.length;

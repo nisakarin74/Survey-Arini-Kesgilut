@@ -90,7 +90,7 @@ export interface RespondentData {
   umurLengkap?: string; // e.g. "17 tahun 3 bulan 15 hari"
   jenisKelamin: 'Laki-laki' | 'Perempuan';
   umur: number;
-  kelompokUmur: '5-10' | '10-18' | '18-60' | '60+'; // 'Antara 5-10 tahun', 'Antara 10-18 tahun', 'Antara 18-60 tahun', '60 tahun ke atas'
+  kelompokUmur: '0-4' | '5-11' | '12-17' | '18-59' | '60+'; // Rentang Usia Standar WHO: 0-4 (Balita), 5-11 (Anak), 12-17 (Remaja), 18-59 (Dewasa), 60+ (Lansia)
   pendidikan: 'SD' | 'SMP' | 'SMA' | 'Diploma' | 'S1/D4' | 'S2' | 'S3' | 'Tidak Sekolah';
   pekerjaan: 'ASN/PNS/PPPK' | 'TNI/POLRI' | 'PEGAWAI BUMN' | 'PEGAWAI SWASTA' | 'WIRASWASTA/WIRAUSAHA' | 'PELAJAR/MAHASISWA' | 'PENGURUS/IBU RUMAH TANGGA' | 'ASISTEN RUMAH TANGGA' | 'TIDAK BEKERJA';
   

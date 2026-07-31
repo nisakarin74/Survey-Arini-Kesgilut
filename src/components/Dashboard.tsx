@@ -294,27 +294,33 @@ export default function Dashboard({ respondents }: DashboardProps) {
 
           <div className="space-y-3 py-1">
             <ProgressBar
-              label="5-10 tahun (anak-anak)"
-              count={stats.ageGroupBreakdown['5-10']}
-              pct={stats.ageGroupFilledCount ? (stats.ageGroupBreakdown['5-10'] / stats.ageGroupFilledCount) * 100 : 0}
+              label="0-4 tahun (balita / WHO)"
+              count={stats.ageGroupBreakdown['0-4'] || 0}
+              pct={stats.ageGroupFilledCount ? ((stats.ageGroupBreakdown['0-4'] || 0) / stats.ageGroupFilledCount) * 100 : 0}
+              colorClass="bg-gradient-to-r from-teal-400 to-teal-600"
+            />
+            <ProgressBar
+              label="5-11 tahun (anak-anak / WHO)"
+              count={stats.ageGroupBreakdown['5-11'] || 0}
+              pct={stats.ageGroupFilledCount ? ((stats.ageGroupBreakdown['5-11'] || 0) / stats.ageGroupFilledCount) * 100 : 0}
               colorClass="bg-gradient-to-r from-emerald-400 to-emerald-600"
             />
             <ProgressBar
-              label="10-18 tahun (remaja)"
-              count={stats.ageGroupBreakdown['10-18']}
-              pct={stats.ageGroupFilledCount ? (stats.ageGroupBreakdown['10-18'] / stats.ageGroupFilledCount) * 100 : 0}
+              label="12-17 tahun (remaja / WHO)"
+              count={stats.ageGroupBreakdown['12-17'] || 0}
+              pct={stats.ageGroupFilledCount ? ((stats.ageGroupBreakdown['12-17'] || 0) / stats.ageGroupFilledCount) * 100 : 0}
               colorClass="bg-gradient-to-r from-indigo-400 to-indigo-600"
             />
             <ProgressBar
-              label="18-60 tahun (produktif)"
-              count={stats.ageGroupBreakdown['18-60']}
-              pct={stats.ageGroupFilledCount ? (stats.ageGroupBreakdown['18-60'] / stats.ageGroupFilledCount) * 100 : 0}
+              label="18-59 tahun (dewasa / WHO)"
+              count={stats.ageGroupBreakdown['18-59'] || 0}
+              pct={stats.ageGroupFilledCount ? ((stats.ageGroupBreakdown['18-59'] || 0) / stats.ageGroupFilledCount) * 100 : 0}
               colorClass="bg-gradient-to-r from-amber-400 to-amber-600"
             />
             <ProgressBar
-              label="60 tahun ke atas (lansia)"
-              count={stats.ageGroupBreakdown['60+']}
-              pct={stats.ageGroupFilledCount ? (stats.ageGroupBreakdown['60+'] / stats.ageGroupFilledCount) * 100 : 0}
+              label="60+ tahun (lansia / WHO)"
+              count={stats.ageGroupBreakdown['60+'] || 0}
+              pct={stats.ageGroupFilledCount ? ((stats.ageGroupBreakdown['60+'] || 0) / stats.ageGroupFilledCount) * 100 : 0}
               colorClass="bg-gradient-to-r from-rose-400 to-rose-600"
             />
           </div>

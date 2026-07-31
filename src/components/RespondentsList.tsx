@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Search, Trash2, Eye, Edit3, ShieldAlert, CheckCircle2, User, ChevronLeft, ChevronRight, X, Heart, AlertCircle, Sparkles, Save, Check, UserCheck, Calendar, Cake } from 'lucide-react';
 import { RespondentData, DeciduousTeethState, PermanentTeethState } from '../types';
 import Odontogram from './Odontogram';
-import { calculateDetailedAge, extractDobFromNik, generateDefaultOHIS } from '../lib/surveyEngine';
+import { calculateDetailedAge, extractDobFromNik, generateDefaultOHIS, normalizeAgeGroup } from '../lib/surveyEngine';
 
 interface RespondentsListProps {
   respondents: RespondentData[];
@@ -47,7 +47,7 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
                           (r.nik && r.nik.toLowerCase().includes(term)) ||
                           (r.pemeriksa && r.pemeriksa.toLowerCase().includes(term));
     const matchesGender = genderFilter === 'all' || r.jenisKelamin === genderFilter;
-    const matchesAgeGroup = ageGroupFilter === 'all' || r.kelompokUmur === ageGroupFilter;
+    const matchesAgeGroup = ageGroupFilter === 'all' || normalizeAgeGroup(r.kelompokUmur, r.umur) === ageGroupFilter;
     
     let matchesReferral = true;
     if (referralFilter === 'rujuk') matchesReferral = r.tindakLanjut.perluDirujuk;
@@ -227,10 +227,11 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
           onChange={e => { setAgeGroupFilter(e.target.value); setCurrentPage(1); }}
           className="px-3.5 py-2.5 bg-white/70 dark:bg-slate-900/80 border border-pink-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-bold shadow-xs"
         >
-          <option value="all">Semua Kelompok Umur</option>
-          <option value="5-10">Anak-anak (5-10 th)</option>
-          <option value="10-18">Remaja (10-18 th)</option>
-          <option value="18-60">Produktif (18-60 th)</option>
+          <option value="all">Semua Kelompok Umur (WHO)</option>
+          <option value="0-4">Balita (0-4 th)</option>
+          <option value="5-11">Anak-anak (5-11 th)</option>
+          <option value="12-17">Remaja (12-17 th)</option>
+          <option value="18-59">Dewasa (18-59 th)</option>
           <option value="60+">Lansia (60+ th)</option>
         </select>
 

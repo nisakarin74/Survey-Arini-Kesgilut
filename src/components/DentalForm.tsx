@@ -777,11 +777,12 @@ export default function DentalForm({ onSaveRespondent, nextRespondentNumber, isR
     }
   };
 
-  // Determine age group string
+  // Determine age group string according to WHO standard
   const getAgeGroupValue = (val: number): RespondentData['kelompokUmur'] => {
-    if (val >= 5 && val <= 10) return '5-10';
-    if (val > 10 && val <= 18) return '10-18';
-    if (val > 18 && val <= 60) return '18-60';
+    if (val < 5) return '0-4';
+    if (val >= 5 && val <= 11) return '5-11';
+    if (val >= 12 && val <= 17) return '12-17';
+    if (val >= 18 && val <= 59) return '18-59';
     return '60+';
   };
 
