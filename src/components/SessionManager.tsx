@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Users, Plus, Key, Copy, Check, Info, Database, Trash2, Wifi, Eye } from 'lucide-react';
+import { Users, Plus, Key, Copy, Check, Info, Database, Trash2, Wifi, Eye, FileSpreadsheet } from 'lucide-react';
 import { RespondentData } from '../types';
-import { generateMockRespondents } from '../lib/surveyEngine';
+import { generateMockRespondents, exportQuantitativeSPSS } from '../lib/surveyEngine';
 
 interface SessionManagerProps {
   currentSessionId: string;
@@ -80,6 +80,13 @@ export default function SessionManager({
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
+  const handleExportSpssDirect = () => {
+    const mock = generateMockRespondents();
+    exportQuantitativeSPSS(mock, currentSessionName);
+    setSuccessMsg('Master dataset 150 responden WHO berhasil diekspor ke format Excel Pre-Coded SPSS Statistics!');
+    setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto p-2" id="session-manager-root">
       {/* Active Session Card */}
@@ -118,7 +125,17 @@ export default function SessionManager({
                   id="btn-load-mock"
                 >
                   <Database className="w-4 h-4 text-indigo-200" />
-                  Muat Data Simulasi
+                  Muat Data Simulasi (150 Responden)
+                </button>
+
+                <button
+                  onClick={handleExportSpssDirect}
+                  className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black py-2.5 px-4 rounded-xl transition-all shadow-md shadow-purple-900/30 hover:scale-[1.02] cursor-pointer"
+                  title="Unduh dataset 150 responden simulasi ke file Excel SPSS pre-coded"
+                  id="btn-export-spss-direct"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-purple-200" />
+                  Ekspor 150 Responden Ke SPSS (.xlsx)
                 </button>
 
                 {respondentsCount > 0 && (

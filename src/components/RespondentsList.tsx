@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
-import { Search, Trash2, Eye, Edit3, ShieldAlert, CheckCircle2, User, ChevronLeft, ChevronRight, X, Heart, AlertCircle, Sparkles, Save, Check, UserCheck, Calendar, Cake } from 'lucide-react';
+import { Search, Trash2, Eye, Edit3, ShieldAlert, CheckCircle2, User, ChevronLeft, ChevronRight, X, Heart, AlertCircle, Sparkles, Save, Check, UserCheck, Calendar, Cake, FileSpreadsheet, FileDown, HelpCircle, FileText } from 'lucide-react';
 import { RespondentData, DeciduousTeethState, PermanentTeethState } from '../types';
 import Odontogram from './Odontogram';
-import { calculateDetailedAge, extractDobFromNik, generateDefaultOHIS, normalizeAgeGroup } from '../lib/surveyEngine';
+import { calculateDetailedAge, extractDobFromNik, generateDefaultOHIS, normalizeAgeGroup, exportQuantitativeSPSS, exportQuantitativeExcel } from '../lib/surveyEngine';
 
 interface RespondentsListProps {
   respondents: RespondentData[];
   onDeleteRespondent: (id: string) => Promise<void>;
   onUpdateRespondent?: (id: string, updatedData: Partial<RespondentData>) => Promise<void>;
   isReadOnly?: boolean;
+  sessionName?: string;
 }
 
-export default function RespondentsList({ respondents, onDeleteRespondent, onUpdateRespondent, isReadOnly = false }: RespondentsListProps) {
+export default function RespondentsList({ respondents, onDeleteRespondent, onUpdateRespondent, isReadOnly = false, sessionName = 'Stan Pemeriksaan Gigi Arini' }: RespondentsListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [genderFilter, setGenderFilter] = useState('all');
   const [ageGroupFilter, setAgeGroupFilter] = useState('all');
@@ -22,6 +23,25 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [showSpssGuideModal, setShowSpssGuideModal] = useState(false);
+
+  const handleExportSPSS = () => {
+    if (respondents.length === 0) {
+      showNotice("Tidak ada data responden untuk diekspor!");
+      return;
+    }
+    exportQuantitativeSPSS(respondents, sessionName);
+    showNotice(`Master data (${respondents.length} responden) berhasil diekspor ke format SPSS Excel!`);
+  };
+
+  const handleExportExcelMaster = () => {
+    if (respondents.length === 0) {
+      showNotice("Tidak ada data responden untuk diekspor!");
+      return;
+    }
+    exportQuantitativeExcel(respondents, sessionName);
+    showNotice(`Master data (${respondents.length} responden) berhasil diekspor ke Excel Laporan Kuantitatif!`);
+  };
   
   // Custom Delete Confirmation State
   type DeleteTarget = 
@@ -181,16 +201,50 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {respondents.length > 0 && (
+            <>
+              <button
+                onClick={handleExportSPSS}
+                className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-black text-xs rounded-xl shadow-md shadow-indigo-600/20 transition-all cursor-pointer flex items-center gap-1.5 hover:scale-[1.02]"
+                title="Ekspor Master Data (150 Responden) ke format Excel Pre-Coded untuk IBM SPSS Statistics"
+                id="btn-export-master-spss"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-indigo-200" />
+                <span>Ekspor SPSS (.xlsx)</span>
+              </button>
+
+              <button
+                onClick={handleExportExcelMaster}
+                className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center gap-1.5 hover:scale-[1.02]"
+                title="Ekspor Master Data Laporan Kuantitatif Excel (.xlsx)"
+                id="btn-export-master-excel"
+              >
+                <FileDown className="w-4 h-4 text-emerald-200" />
+                <span>Ekspor Excel Master</span>
+              </button>
+
+              <button
+                onClick={() => setShowSpssGuideModal(true)}
+                className="px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-slate-700 font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                title="Petunjuk cara membuka file SPSS di IBM SPSS Statistics"
+                id="btn-open-spss-guide"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Panduan SPSS</span>
+              </button>
+            </>
+          )}
+
           {respondents.length > 0 && !isReadOnly && (
             <button
               onClick={handleDeleteAll}
-              className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+              className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 shadow-xs ml-1"
               title="Hapus seluruh data responden"
               id="btn-delete-all-respondents"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-              <span>Hapus Semua Responden</span>
+              <span>Hapus Semua</span>
             </button>
           )}
         </div>
@@ -1207,6 +1261,74 @@ export default function RespondentsList({ respondents, onDeleteRespondent, onUpd
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SPSS Import Guide Modal */}
+      {showSpssGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn" id="spss-guide-modal">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-indigo-200 dark:border-indigo-900 shadow-2xl max-w-2xl w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-indigo-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                  <FileSpreadsheet className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 font-display">Panduan Impor Master Data ke IBM SPSS Statistics</h3>
+                  <p className="text-xs text-indigo-600 dark:text-indigo-400 font-bold">Format Excel Pre-Coded Siap Analisis Uji Bivariat/Multivariat</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowSpssGuideModal(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+              <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800">
+                <p className="font-extrabold text-indigo-900 dark:text-indigo-200 mb-1">💡 Ringkasan Struktur Dataset SPSS (.xlsx):</p>
+                <ul className="list-disc list-inside space-y-1 text-indigo-800 dark:text-indigo-300">
+                  <li><strong>Sheet 1 (SPSS_Raw_Data):</strong> Berisi seluruh data numerik responden (150 sampel) yang telah dikodekan secara kuantitatif (1=Laki-laki, 2=Perempuan, 1-5 Kelompok Umur, d-e-f, D-M-F, OHI-S, DI-S, CI-S, karies, pendarahan gusi, rujukan).</li>
+                  <li><strong>Sheet 2 (SPSS_Variable_View):</strong> Kamus data variabel lengkap (Keterangan Nama, Tipe, Lebar, Desimal, Label, dan Koding Value).</li>
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
+                  <span>📌 Langkah Impor ke IBM SPSS Statistics:</span>
+                </h4>
+                <ol className="list-decimal list-inside space-y-2 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <li>Buka aplikasi <strong>IBM SPSS Statistics</strong> di komputer Anda.</li>
+                  <li>Klik menu <strong>File &gt; Open &gt; Data...</strong></li>
+                  <li>Pada dropdown <i>Files of type</i>, pilih <strong>Excel (*.xls, *.xlsx)</strong>.</li>
+                  <li>Pilih file <strong>Dataset_SPSS_Kesehatan_Gigi_...xlsx</strong> yang baru saja Anda unduh.</li>
+                  <li>Pada dialog <i>Read Excel File</i>:
+                    <ul className="list-disc list-inside pl-4 mt-1 space-y-1 text-slate-600 dark:text-slate-400">
+                      <li>Pilih WorkSheet: <strong>SPSS_Raw_Data</strong></li>
+                      <li>Centang pilihan <strong>"Read variable names from the first row of data"</strong>.</li>
+                      <li>Klik <strong>OK</strong>.</li>
+                    </ul>
+                  </li>
+                  <li>Data 150 responden siap dianalisis dengan uji Chi-Square, Independent T-Test, One-Way ANOVA, atau Regresi Logistik!</li>
+                </ol>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  onClick={() => {
+                    handleExportSPSS();
+                    setShowSpssGuideModal(false);
+                  }}
+                  className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black rounded-xl shadow-lg shadow-indigo-600/30 hover:scale-[1.02] active:scale-95 transition flex items-center gap-2 cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Unduh Dataset SPSS (.xlsx) Sekarang
+                </button>
+              </div>
             </div>
           </div>
         </div>

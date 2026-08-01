@@ -20,7 +20,7 @@ import {
 import { collection, doc, addDoc, onSnapshot, query, deleteDoc, updateDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './lib/firebase';
 import { RespondentData, AIPlaqueAnalysisResult } from './types';
-import { exportToExcel, exportToPdf, generateMockRespondents, ensureOHISForRespondent } from './lib/surveyEngine';
+import { exportToExcel, exportToPdf, generateMockRespondents, ensureOHISForRespondent, exportQuantitativeSPSS } from './lib/surveyEngine';
 
 // Subcomponents
 import Dashboard from './components/Dashboard';
@@ -269,6 +269,14 @@ export default function App() {
     exportToExcel(respondents, currentSessionName);
   };
 
+  const triggerSpssExport = () => {
+    if (respondents.length === 0) {
+      alert("Tidak ada data untuk diekspor ke SPSS!");
+      return;
+    }
+    exportQuantitativeSPSS(respondents, currentSessionName);
+  };
+
   if (!isLoggedIn) {
     return <LoginForm onLoginSuccess={handleLoginSuccess} />;
   }
@@ -419,6 +427,16 @@ export default function App() {
 
               {respondents.length > 0 && (
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={triggerSpssExport}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-xl shadow-xs transition-all duration-200 cursor-pointer hover:scale-[1.02]"
+                    title="Ekspor Dataset Master Data ke Format IBM SPSS (.xlsx)"
+                    id="btn-global-export-spss"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-indigo-200" />
+                    <span className="hidden lg:inline">Ekspor SPSS (.xlsx)</span>
+                  </button>
+
                   <button
                     onClick={triggerPdfExport}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-white/70 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-700 border border-pink-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold rounded-xl shadow-xs transition-all duration-200 cursor-pointer hover:scale-[1.02]"
@@ -592,6 +610,7 @@ export default function App() {
                 respondents={respondents} 
                 onDeleteRespondent={handleDeleteRespondent} 
                 onUpdateRespondent={handleUpdateRespondent}
+                sessionName={currentSessionName}
               />
             )}
 
