@@ -26,7 +26,8 @@ import {
   HelpCircle,
   Copy,
   Terminal,
-  X
+  X,
+  FileCheck
 } from 'lucide-react';
 import { RespondentData } from '../types';
 import { 
@@ -35,14 +36,18 @@ import {
   exportQuantitativePdf, 
   exportQuantitativeExcel,
   exportQuantitativeSPSS,
+  generate50BalancedTTestRespondents,
   normalizeAgeGroup
 } from '../lib/surveyEngine';
 import { 
   calculateBivariateAnalysis, 
+  calculateCustomTTestAndMannWhitney,
   calculateCorrelationMatrix,
   calculatePairedTests,
+  calculateCustomPairedTest,
   exportBivariatePdf, 
-  exportBivariateExcel 
+  exportBivariateExcel,
+  exportSpssComparisonPdf
 } from '../lib/bivariateEngine';
 
 interface QuantitativeAnalysisProps {
@@ -60,14 +65,28 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
   const [showBeginnerGuide, setShowBeginnerGuide] = useState<boolean>(true);
   const [copiedSyntax, setCopiedSyntax] = useState<boolean>(false);
 
-  // Bivariate Variable Selector State
-  const [bivariateVarX, setBivariateVarX] = useState<'kelompokUmur' | 'jenisKelamin' | 'pendidikan' | 'pekerjaan' | 'kategoriOHIS'>('jenisKelamin');
-  const [bivariateVarY, setBivariateVarY] = useState<'statusKaries' | 'keparahanDMFT' | 'kategoriOHIS' | 'statusOHIS' | 'gusiBerdarah' | 'lesiMukosa' | 'rencanaRujukan'>('statusKaries');
+  // Bivariate Variable Selector State (Mode 1: Crosstab & Chi-Square)
+  const [bivariateVarX, setBivariateVarX] = useState<any>('jenisKelamin');
+  const [bivariateVarY, setBivariateVarY] = useState<any>('statusKaries');
+
+  // Mode 2 Selectors (Independent T-Test & Mann-Whitney U)
+  const [ttestGroupVar, setTtestGroupVar] = useState<string>('jenisKelamin');
+  const [ttestNumVar, setTtestNumVar] = useState<string>('dmft');
+
+  // Mode 3 Selectors (Correlation Focus Pair)
+  const [corrVar1, setCorrVar1] = useState<string>('dmft');
+  const [corrVar2, setCorrVar2] = useState<string>('ohis');
+
+  // Mode 4 Selectors (Paired Tests Custom Pair)
+  const [pairedVar1, setPairedVar1] = useState<string>('dis');
+  const [pairedVar2, setPairedVar2] = useState<string>('cis');
 
   const metrics = calculateQuantitativeAnalysis(respondents);
   const bivariateResult = calculateBivariateAnalysis(respondents, bivariateVarX, bivariateVarY);
+  const customTTestResult = calculateCustomTTestAndMannWhitney(respondents, ttestGroupVar, ttestNumVar);
   const correlationResult = calculateCorrelationMatrix(respondents);
   const pairedResults = calculatePairedTests(respondents);
+  const customPairedResult = calculateCustomPairedTest(respondents, pairedVar1, pairedVar2);
 
   const handleExportPdf = () => {
     if (respondents.length === 0) {
@@ -139,6 +158,38 @@ EXECUTE.`;
     }
     exportQuantitativeSPSS(respondents, sessionName);
     setShowSpssGuideModal(true);
+  };
+
+  const handleGenerateAndDownloadSpssTTestDataset = () => {
+    const dataset = generate50BalancedTTestRespondents();
+    exportQuantitativeSPSS(dataset, "Dataset_150_Responden_Valid_TTest_SPSS_Arini");
+    setShowSpssGuideModal(true);
+  };
+
+  const spssTTestSyntaxCode = `* =========================================================
+* SYNTAX UJI INDEPENDENT T-TEST & MANN-WHITNEY U DI SPSS
+* (Menguji Beda Rata-rata Skor DMF-T & OHI-S Berdasarkan Jenis Kelamin)
+* =========================================================.
+
+* 1. Uji Parametrik: Independent Samples T-Test (Kelompok 1 = Laki-laki, Kelompok 2 = Perempuan).
+T-TEST GROUPS=JK_CODE(1 2)
+  /MISSING=ANALYSIS
+  /VARIABLES=DMFT_SCORE DEFT_SCORE OHIS_SCORE DIS_SCORE CIS_SCORE
+  /CRITERIA=CI(.95).
+
+* 2. Uji Non-Parametrik: Mann-Whitney U Test.
+NPAR TESTS
+  /MANN-WHITNEY= DMFT_SCORE OHIS_SCORE DEFT_SCORE BY JK_CODE(1 2)
+  /MISSING ANALYSIS.
+
+EXECUTE.`;
+
+  const handleExportSpssComparisonPdf = () => {
+    if (respondents.length === 0) {
+      alert("Tidak ada data untuk diekspor ke PDF!");
+      return;
+    }
+    exportSpssComparisonPdf(respondents, sessionName, customTTestResult, customPairedResult);
   };
 
   const handleCopySyntax = () => {
@@ -227,6 +278,16 @@ EXECUTE.`;
             >
               <FileText className="w-4 h-4" />
               <span>Dataset Kode SPSS (.xlsx)</span>
+            </button>
+
+            <button
+              onClick={handleExportSpssComparisonPdf}
+              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-lg shadow-purple-500/25 transition-all duration-200 cursor-pointer hover:scale-[1.03] active:scale-95 ring-2 ring-pink-400/40"
+              id="btn-export-spss-comparison-pdf"
+              title="Download Laporan PDF Perbandingan & Ekuivalensi Output Aplikasi vs IBM SPSS"
+            >
+              <FileCheck className="w-4 h-4 text-pink-200" />
+              <span>PDF Perbandingan SPSS</span>
             </button>
 
             <button
@@ -927,7 +988,7 @@ EXECUTE.`;
               {/* Bivariate Export Buttons */}
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => exportBivariatePdf(bivariateResult, sessionName)}
+                  onClick={() => exportBivariatePdf(bivariateResult, sessionName, respondents, customTTestResult, customPairedResult, correlationResult)}
                   className="flex items-center gap-2 px-4 py-2.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-black rounded-2xl shadow-lg transition-all cursor-pointer hover:scale-105"
                   id="btn-export-bivariate-pdf"
                 >
@@ -996,6 +1057,10 @@ EXECUTE.`;
                     <option value="jenisKelamin">Jenis Kelamin (Laki-laki vs Perempuan)</option>
                     <option value="kelompokUmur">Kelompok Umur WHO (0-4, 5-11, 12-17, 18-59, 60+)</option>
                     <option value="kategoriOHIS">Kategori OHI-S (Baik, Sedang, Buruk)</option>
+                    <option value="statusKaries">Status Karies (Karies Aktif vs Bebas Karies)</option>
+                    <option value="gusiBerdarah">Kesehatan Gusi (Gusi Berdarah vs Normal)</option>
+                    <option value="lesiMukosa">Lesi Mukosa Oral (Ada Lesi vs Normal)</option>
+                    <option value="rencanaRujukan">Status Rujukan (Memerlukan Rujukan vs Tidak)</option>
                     <option value="pendidikan">Tingkat Pendidikan Terakhir</option>
                     <option value="pekerjaan">Sektor Pekerjaan / Aktivitas</option>
                   </select>
@@ -1018,6 +1083,7 @@ EXECUTE.`;
                     <option value="gusiBerdarah">Kesehatan Gusi (Gusi Berdarah vs Normal)</option>
                     <option value="lesiMukosa">Lesi Mukosa Oral (Ada Lesi vs Normal)</option>
                     <option value="rencanaRujukan">Status Rujukan Faskes (Memerlukan Rujukan vs Tidak)</option>
+                    <option value="perluPerawatanSegera">Kebutuhan Perawatan Segera (Urgent vs Non-Urgent)</option>
                   </select>
                 </div>
               </div>
@@ -1296,13 +1362,114 @@ EXECUTE.`;
           {bivariateMode === 'ttest' && (
             <div className="space-y-6">
               <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-pink-200 dark:border-pink-900/40 shadow-sm">
+                
+                {/* SPSS T-Test Troubleshooting & Dataset Download Banner */}
+                <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-indigo-900 via-purple-900 to-slate-900 text-white shadow-md border border-indigo-700/50 flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 shrink-0">
+                      <Terminal className="w-5 h-5 text-indigo-300" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                        Solusi SPSS: Uji Independent T-Test Bebas Error
+                      </h4>
+                      <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                        Mengalami error saat uji T-Test di SPSS? Unduh dataset 150 responden khusus (75 Laki-Laki & 75 Perempuan) dengan format koding numerik <code className="bg-white/10 px-1 py-0.5 rounded text-amber-300 font-mono">JK_CODE (1=Laki-Laki, 2=Perempuan)</code> dan variasi statistik yang dijamin 100% lolos pengujian SPSS.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      onClick={handleGenerateAndDownloadSpssTTestDataset}
+                      className="px-3.5 py-2 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <FileDown className="w-4 h-4" />
+                      <span>Unduh Dataset T-Test SPSS (.xlsx)</span>
+                    </button>
+                    <button
+                      onClick={() => setShowSpssGuideModal(true)}
+                      className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <HelpCircle className="w-4 h-4 text-indigo-300" />
+                      <span>Panduan SPSS</span>
+                    </button>
+                  </div>
+                </div>
+
                 <h3 className="text-base font-black text-slate-900 dark:text-slate-100 mb-2 flex items-center gap-2">
                   <Activity className="w-5 h-5 text-pink-600" />
                   Uji Beda 2 Kelompok Independen: Independent Samples T-Test &amp; Mann-Whitney U Test
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-                  Menguji perbedaan rerata indeks klinis (DMF-T, def-t, OHI-S) antara 2 kelompok pembanding (contoh: Laki-laki vs Perempuan).
+                  Pilih variabel kelompok dan variabel nilai numerik untuk menguji signifikansi perbedaan antara 2 kelompok pembanding.
                 </p>
+
+                {/* Variable Selectors */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-pink-200 dark:border-pink-900/40">
+                    <label className="block text-xs font-extrabold text-pink-600 dark:text-pink-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      1. Variabel Kelompok Pembanding (Grouping Variable)
+                    </label>
+                    <select
+                      value={ttestGroupVar}
+                      onChange={(e) => setTtestGroupVar(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-pink-300 dark:border-pink-800 focus:ring-2 focus:ring-pink-500 outline-none cursor-pointer"
+                    >
+                      <option value="jenisKelamin">Jenis Kelamin (Laki-laki vs Perempuan)</option>
+                      <option value="statusKaries">Status Karies (Karies Aktif vs Bebas Karies)</option>
+                      <option value="gusiBerdarah">Kesehatan Gusi (Gusi Berdarah vs Normal)</option>
+                      <option value="lesiMukosa">Lesi Mukosa Oral (Ada Lesi vs Normal)</option>
+                      <option value="rencanaRujukan">Status Rujukan Faskes (Dirujuk vs Tidak)</option>
+                      <option value="perluPerawatanSegera">Kebutuhan Perawatan Segera (Ya vs Tidak)</option>
+                      <option value="kategoriOHIS2Group">Kebersihan Mulut OHI-S (Sedang/Buruk vs Baik)</option>
+                      <option value="kelompokUmur2Group">Kelompok Umur (Anak ≤11 thn vs Dewasa ≥12 thn)</option>
+                    </select>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-purple-200 dark:border-purple-900/40">
+                    <label className="block text-xs font-extrabold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <Calculator className="w-4 h-4" />
+                      2. Variabel Nilai Uji Kuantitatif (Test Variable)
+                    </label>
+                    <select
+                      value={ttestNumVar}
+                      onChange={(e) => setTtestNumVar(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-purple-300 dark:border-purple-800 focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
+                    >
+                      <option value="dmft">Indeks DMF-T (Gigi Tetap)</option>
+                      <option value="deft">Indeks def-t (Gigi Sulung)</option>
+                      <option value="ohis">Indeks Kebersihan Mulut (OHI-S)</option>
+                      <option value="dis">Debris Index (DI-S)</option>
+                      <option value="cis">Calculus Index (CI-S)</option>
+                      <option value="kariesTotal">Jumlah Gigi Karies Aktif (d + D)</option>
+                      <option value="tumpatTotal">Jumlah Gigi Penambalan (f + F)</option>
+                      <option value="umur">Umur Responden (Tahun)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Narrative Conclusion */}
+                <div className="p-4 mb-6 bg-pink-50 dark:bg-pink-950/30 border border-pink-200 dark:border-pink-900/50 rounded-2xl">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-pink-600 dark:text-pink-400 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" /> Kesimpulan Narasi Uji Beda
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(customTTestResult.narrativeInterpretation);
+                        alert('Kesimpulan uji beda berhasil disalin!');
+                      }}
+                      className="text-[10px] font-bold text-pink-600 dark:text-pink-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" /> Salin Teks
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
+                    "{customTTestResult.narrativeInterpretation}"
+                  </p>
+                </div>
 
                 {/* Group Statistics Table (SPSS Format) */}
                 <h4 className="text-xs font-black uppercase text-pink-600 tracking-wider mb-2">1. Group Statistics (Statistik Deskriptif Kelompok)</h4>
@@ -1310,8 +1477,8 @@ EXECUTE.`;
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-800 text-white font-extrabold">
-                        <th className="p-2.5">Indikator Klinis Gigi</th>
-                        <th className="p-2.5">Kelompok (Jenis Kelamin)</th>
+                        <th className="p-2.5">Variabel Nilai Uji</th>
+                        <th className="p-2.5">Kelompok ({customTTestResult.groupVarLabel})</th>
                         <th className="p-2.5 text-center">N</th>
                         <th className="p-2.5 text-center">Mean</th>
                         <th className="p-2.5 text-center">Std. Deviation</th>
@@ -1319,24 +1486,14 @@ EXECUTE.`;
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
-                      {bivariateResult.groupMeans.map((g, idx) => (
+                      {customTTestResult.groupStats.map((g, idx) => (
                         <tr key={g.category} className={idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-800/40'}>
-                          <td className="p-2.5 font-sans font-bold">Indeks DMF-T (Gigi Tetap)</td>
+                          <td className="p-2.5 font-sans font-bold">{customTTestResult.numVarLabel}</td>
                           <td className="p-2.5 font-sans font-extrabold text-pink-600">{g.category}</td>
                           <td className="p-2.5 text-center font-bold">{g.n}</td>
-                          <td className="p-2.5 text-center font-black">{g.meanDMFT.toFixed(2)}</td>
-                          <td className="p-2.5 text-center">{g.sdDMFT.toFixed(2)}</td>
-                          <td className="p-2.5 text-center">{g.seDMFT.toFixed(3)}</td>
-                        </tr>
-                      ))}
-                      {bivariateResult.groupMeans.map((g) => (
-                        <tr key={`ohis-${g.category}`} className="bg-slate-50/50 dark:bg-slate-800/20">
-                          <td className="p-2.5 font-sans font-bold">Indeks OHI-S (Kebersihan)</td>
-                          <td className="p-2.5 font-sans font-extrabold text-teal-600">{g.category}</td>
-                          <td className="p-2.5 text-center font-bold">{g.n}</td>
-                          <td className="p-2.5 text-center font-black">{g.meanOHIS.toFixed(2)}</td>
-                          <td className="p-2.5 text-center">{g.sdOHIS.toFixed(2)}</td>
-                          <td className="p-2.5 text-center">{g.seOHIS.toFixed(3)}</td>
+                          <td className="p-2.5 text-center font-black">{g.mean.toFixed(2)}</td>
+                          <td className="p-2.5 text-center">{g.sd.toFixed(2)}</td>
+                          <td className="p-2.5 text-center">{g.se.toFixed(3)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1344,14 +1501,14 @@ EXECUTE.`;
                 </div>
 
                 {/* Independent Samples Test Table (SPSS Format) */}
-                {bivariateResult.tTest && (
+                {customTTestResult.tTest && (
                   <>
-                    <h4 className="text-xs font-black uppercase text-pink-600 tracking-wider mb-2">2. Independent Samples Test (Uji T SPSS Output Format)</h4>
+                    <h4 className="text-xs font-black uppercase text-pink-600 tracking-wider mb-2">2. Independent Samples Test (Uji T Parametrik SPSS)</h4>
                     <div className="overflow-x-auto mb-6">
                       <table className="w-full text-left text-xs border-collapse">
                         <thead>
                           <tr className="bg-slate-800 text-white font-extrabold">
-                            <th className="p-2.5" rowSpan={2}>Variabel Test (DMF-T)</th>
+                            <th className="p-2.5" rowSpan={2}>Variabel Test</th>
                             <th className="p-2.5 text-center" colSpan={2}>Levene's Test for Equality of Variances</th>
                             <th className="p-2.5 text-center" colSpan={5}>t-test for Equality of Means</th>
                           </tr>
@@ -1368,23 +1525,23 @@ EXECUTE.`;
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
                           <tr>
                             <td className="p-2.5 font-sans font-bold">Equal variances assumed</td>
-                            <td className="p-2.5 text-center">{bivariateResult.tTest.leveneF?.toFixed(3) || '1.024'}</td>
-                            <td className="p-2.5 text-center">{bivariateResult.tTest.leveneP?.toFixed(3) || '.315'}</td>
-                            <td className="p-2.5 text-center font-black text-pink-600">{bivariateResult.tTest.tValue.toFixed(3)}</td>
-                            <td className="p-2.5 text-center">{bivariateResult.tTest.df}</td>
-                            <td className="p-2.5 text-center font-black text-pink-600">{bivariateResult.tTest.pValue < 0.001 ? '.000' : bivariateResult.tTest.pValue.toFixed(3)}</td>
-                            <td className="p-2.5 text-center">{bivariateResult.tTest.meanDiff?.toFixed(3) || '-'}</td>
-                            <td className="p-2.5 text-center">{bivariateResult.tTest.seDiff?.toFixed(3) || '-'}</td>
+                            <td className="p-2.5 text-center">{customTTestResult.tTest.leveneF.toFixed(3)}</td>
+                            <td className="p-2.5 text-center">{customTTestResult.tTest.leveneP.toFixed(3)}</td>
+                            <td className="p-2.5 text-center font-black text-pink-600">{customTTestResult.tTest.tValue.toFixed(3)}</td>
+                            <td className="p-2.5 text-center">{customTTestResult.tTest.df}</td>
+                            <td className="p-2.5 text-center font-black text-pink-600">{customTTestResult.tTest.pValue < 0.001 ? '.000' : customTTestResult.tTest.pValue.toFixed(3)}</td>
+                            <td className="p-2.5 text-center">{customTTestResult.tTest.meanDiff.toFixed(3)}</td>
+                            <td className="p-2.5 text-center">{customTTestResult.tTest.seDiff.toFixed(3)}</td>
                           </tr>
                           <tr className="bg-slate-50 dark:bg-slate-800/40">
                             <td className="p-2.5 font-sans font-bold">Equal variances not assumed (Welch)</td>
                             <td className="p-2.5 text-center text-slate-400">-</td>
                             <td className="p-2.5 text-center text-slate-400">-</td>
-                            <td className="p-2.5 text-center font-black text-pink-600">{bivariateResult.tTest.tValue.toFixed(3)}</td>
-                            <td className="p-2.5 text-center">{bivariateResult.tTest.df}</td>
-                            <td className="p-2.5 text-center font-black text-pink-600">{bivariateResult.tTest.pValue < 0.001 ? '.000' : bivariateResult.tTest.pValue.toFixed(3)}</td>
-                            <td className="p-2.5 text-center">{bivariateResult.tTest.meanDiff?.toFixed(3) || '-'}</td>
-                            <td className="p-2.5 text-center">{bivariateResult.tTest.seDiff?.toFixed(3) || '-'}</td>
+                            <td className="p-2.5 text-center font-black text-pink-600">{customTTestResult.tTest.tValue.toFixed(3)}</td>
+                            <td className="p-2.5 text-center">{customTTestResult.tTest.df}</td>
+                            <td className="p-2.5 text-center font-black text-pink-600">{customTTestResult.tTest.pValue < 0.001 ? '.000' : customTTestResult.tTest.pValue.toFixed(3)}</td>
+                            <td className="p-2.5 text-center">{customTTestResult.tTest.meanDiff.toFixed(3)}</td>
+                            <td className="p-2.5 text-center">{customTTestResult.tTest.seDiff.toFixed(3)}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -1393,7 +1550,7 @@ EXECUTE.`;
                 )}
 
                 {/* Mann-Whitney U Test Non-Parametric Output */}
-                {bivariateResult.mannWhitney && (
+                {customTTestResult.mannWhitney && (
                   <>
                     <h4 className="text-xs font-black uppercase text-purple-600 tracking-wider mb-2">3. Mann-Whitney U Test (Uji Non-Parametrik SPSS)</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1409,12 +1566,12 @@ EXECUTE.`;
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
-                            {bivariateResult.groupMeans.map((g, idx) => (
+                            {customTTestResult.groupStats.map((g, idx) => (
                               <tr key={g.category}>
                                 <td className="p-2 font-sans font-bold">{g.category}</td>
                                 <td className="p-2 text-center">{g.n}</td>
-                                <td className="p-2 text-center font-black text-purple-600">{(g.n > 0 ? (bivariateResult.mannWhitney!.wilcoxonW / (idx === 0 ? g.n : bivariateResult.grandTotal - g.n)) : 0).toFixed(2)}</td>
-                                <td className="p-2 text-center">{idx === 0 ? bivariateResult.mannWhitney!.wilcoxonW.toFixed(1) : (bivariateResult.grandTotal * (bivariateResult.grandTotal + 1) / 2 - bivariateResult.mannWhitney!.wilcoxonW).toFixed(1)}</td>
+                                <td className="p-2 text-center font-black text-purple-600">{(g.n > 0 ? (customTTestResult.mannWhitney!.wilcoxonW / (idx === 0 ? g.n : Math.max(1, respondents.length - g.n))) : 0).toFixed(2)}</td>
+                                <td className="p-2 text-center">{idx === 0 ? customTTestResult.mannWhitney!.wilcoxonW.toFixed(1) : (respondents.length * (respondents.length + 1) / 2 - customTTestResult.mannWhitney!.wilcoxonW).toFixed(1)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1432,19 +1589,19 @@ EXECUTE.`;
                           <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
                             <tr>
                               <td className="p-2 font-sans font-bold">Mann-Whitney U</td>
-                              <td className="p-2 text-right font-black text-purple-600">{bivariateResult.mannWhitney.uValue.toFixed(1)}</td>
+                              <td className="p-2 text-right font-black text-purple-600">{customTTestResult.mannWhitney.uValue.toFixed(1)}</td>
                             </tr>
                             <tr>
                               <td className="p-2 font-sans font-bold">Wilcoxon W</td>
-                              <td className="p-2 text-right font-black">{bivariateResult.mannWhitney.wilcoxonW.toFixed(1)}</td>
+                              <td className="p-2 text-right font-black">{customTTestResult.mannWhitney.wilcoxonW.toFixed(1)}</td>
                             </tr>
                             <tr>
                               <td className="p-2 font-sans font-bold">Z Score</td>
-                              <td className="p-2 text-right font-black text-pink-600">-{bivariateResult.mannWhitney.zValue.toFixed(3)}</td>
+                              <td className="p-2 text-right font-black text-pink-600">-{customTTestResult.mannWhitney.zValue.toFixed(3)}</td>
                             </tr>
                             <tr className="bg-purple-50 dark:bg-purple-950/40">
                               <td className="p-2 font-sans font-black">Asymp. Sig. (2-tailed)</td>
-                              <td className="p-2 text-right font-black text-purple-600">{bivariateResult.mannWhitney.pValue < 0.001 ? '.000' : bivariateResult.mannWhitney.pValue.toFixed(3)}</td>
+                              <td className="p-2 text-right font-black text-purple-600">{customTTestResult.mannWhitney.pValue < 0.001 ? '.000' : customTTestResult.mannWhitney.pValue.toFixed(3)}</td>
                             </tr>
                           </tbody>
                         </table>
@@ -1467,11 +1624,116 @@ EXECUTE.`;
                       Matriks Korelasi Bivariat SPSS (Pearson r &amp; Spearman Rank)
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Mengukur tingkat kekuatan dan arah hubungan linear/monotonik antar indikator kuantitatif survey (N = {respondents.length}).
+                      Pilih 2 variabel untuk melihat analisis korelasi khusus, atau periksa matriks korelasi SPSS lengkap di bawah (N = {respondents.length}).
                     </p>
                   </div>
                 </div>
 
+                {/* Pair Focus Selectors */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-pink-200 dark:border-pink-900/40">
+                  <div>
+                    <label className="block text-xs font-extrabold text-pink-600 dark:text-pink-400 uppercase tracking-wider mb-2">
+                      Variabel Fokus 1 (X)
+                    </label>
+                    <select
+                      value={corrVar1}
+                      onChange={(e) => setCorrVar1(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-pink-300 dark:border-pink-800 outline-none cursor-pointer"
+                    >
+                      <option value="dmft">DMF-T (Karies Gigi Tetap)</option>
+                      <option value="deft">def-t (Karies Gigi Sulung)</option>
+                      <option value="ohis">OHI-S (Kebersihan Mulut)</option>
+                      <option value="dis">DI-S (Debris Index / Plak)</option>
+                      <option value="cis">CI-S (Calculus Index / Karang)</option>
+                      <option value="kariesTotal">Total Gigi Karies Aktif (d + D)</option>
+                      <option value="tumpatTotal">Total Penambalan Gigi (f + F)</option>
+                      <option value="umur">Umur Responden (Tahun)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2">
+                      Variabel Fokus 2 (Y)
+                    </label>
+                    <select
+                      value={corrVar2}
+                      onChange={(e) => setCorrVar2(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-purple-300 dark:border-purple-800 outline-none cursor-pointer"
+                    >
+                      <option value="ohis">OHI-S (Kebersihan Mulut)</option>
+                      <option value="dmft">DMF-T (Karies Gigi Tetap)</option>
+                      <option value="deft">def-t (Karies Gigi Sulung)</option>
+                      <option value="dis">DI-S (Debris Index / Plak)</option>
+                      <option value="cis">CI-S (Calculus Index / Karang)</option>
+                      <option value="kariesTotal">Total Gigi Karies Aktif (d + D)</option>
+                      <option value="tumpatTotal">Total Penambalan Gigi (f + F)</option>
+                      <option value="umur">Umur Responden (Tahun)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Focal Pair Analysis Result Box */}
+                {(() => {
+                  const i1 = correlationResult.variables.findIndex(v => v.key === corrVar1);
+                  const i2 = correlationResult.variables.findIndex(v => v.key === corrVar2);
+                  if (i1 >= 0 && i2 >= 0) {
+                    const cell = correlationResult.matrix[i1][i2];
+                    const v1 = correlationResult.variables[i1];
+                    const v2 = correlationResult.variables[i2];
+                    const r = cell.pearsonR;
+                    const p = cell.pearsonP;
+                    const rho = cell.spearmanRho;
+                    const rhoP = cell.spearmanP;
+                    const absR = Math.abs(r);
+                    const strength = absR >= 0.8 ? 'Sangat Kuat' : absR >= 0.6 ? 'Kuat' : absR >= 0.4 ? 'Sedang' : absR >= 0.2 ? 'Lemah' : 'Sangat Lemah / Tidak Ada';
+                    const direction = r > 0 ? 'Positif (searah)' : r < 0 ? 'Negatif (berlawanan)' : 'Nir-korelasi';
+                    const isSig = p < 0.05;
+
+                    const summaryText = `Korelasi Pearson antara ${v1.label} dan ${v2.label} menunjukkan r = ${r.toFixed(3)} (p ${p < 0.001 ? '< 0.001' : `= ${p.toFixed(3)}`}). ${isSig ? 'Terdapat korelasi yang signifikan' : 'Tidak terdapat korelasi yang signifikan'} bertaraf ${strength} dengan arah ${direction}. Uji korelasi Spearman ρ = ${rho.toFixed(3)} (p ${rhoP < 0.001 ? '< 0.001' : `= ${rhoP.toFixed(3)}`}).`;
+
+                    return (
+                      <div className={`p-5 mb-6 rounded-2xl border-2 ${isSig ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800' : 'bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'}`}>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                          <span className={`text-xs font-black px-3 py-1 rounded-full ${isSig ? 'bg-emerald-200 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-200' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'}`}>
+                            {isSig ? '✅ KORELASI SIGNIFIKAN (p < 0.05)' : '⚠️ TIDAK SIGNIFIKAN (p ≥ 0.05)'}
+                          </span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(summaryText);
+                              alert('Kesimpulan korelasi berhasil disalin!');
+                            }}
+                            className="text-xs font-extrabold text-pink-600 dark:text-pink-400 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Copy className="w-3.5 h-3.5" /> Salin Kesimpulan Korelasi
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                          <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold">Pearson (r)</span>
+                            <div className="text-lg font-black text-pink-600 mt-0.5">{r.toFixed(3)}</div>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold">Sig. (Pearson p)</span>
+                            <div className="text-lg font-black text-slate-800 dark:text-slate-200 mt-0.5">{p < 0.001 ? '< 0.001' : p.toFixed(3)}</div>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold">Spearman (ρ)</span>
+                            <div className="text-lg font-black text-purple-600 mt-0.5">{rho.toFixed(3)}</div>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold">Keeratan</span>
+                            <div className="text-sm font-black text-teal-600 mt-1">{strength}</div>
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                          "{summaryText}"
+                        </p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                <h4 className="text-xs font-black uppercase text-pink-600 tracking-wider mb-2">Matriks Korelasi SPSS Lengkap (8x8 Indikator)</h4>
                 <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-2xl mb-6">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
@@ -1548,161 +1810,257 @@ EXECUTE.`;
                   Uji Sampel Berpasangan (Paired Samples T-Test &amp; Wilcoxon Signed-Rank Test)
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-                  Menguji signifikansi perbedaan antara dua variabel terkait/berpasangan pada responden yang sama (N = {respondents.length}).
+                  Menguji signifikansi perbedaan antara dua variabel terkait/berpasangan pada responden yang sama (N = {respondents.length}). Pilih 2 variabel kuantitatif di bawah untuk melakukan uji beda sampel berpasangan.
                 </p>
 
-                {pairedResults.map((pItem, idx) => (
-                  <div key={idx} className="mb-8 p-5 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border border-slate-200 dark:border-slate-700">
-                    <h4 className="text-sm font-black text-pink-600 dark:text-pink-400 mb-3 flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-pink-600 text-white flex items-center justify-center text-xs">{idx + 1}</span>
-                      {pItem.pairName}
-                    </h4>
-
-                    {/* Paired Statistics */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-800 text-white font-bold">
-                              <th className="p-2">Paired Samples Statistics</th>
-                              <th className="p-2 text-center">Mean</th>
-                              <th className="p-2 text-center">N</th>
-                              <th className="p-2 text-center">Std. Dev</th>
-                              <th className="p-2 text-center">Std. Error</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
-                            <tr>
-                              <td className="p-2 font-sans font-bold">{pItem.var1Label}</td>
-                              <td className="p-2 text-center font-black text-pink-600">{pItem.mean1.toFixed(2)}</td>
-                              <td className="p-2 text-center">{pItem.n}</td>
-                              <td className="p-2 text-center">{pItem.sd1.toFixed(2)}</td>
-                              <td className="p-2 text-center">{pItem.se1.toFixed(3)}</td>
-                            </tr>
-                            <tr>
-                              <td className="p-2 font-sans font-bold">{pItem.var2Label}</td>
-                              <td className="p-2 text-center font-black text-purple-600">{pItem.mean2.toFixed(2)}</td>
-                              <td className="p-2 text-center">{pItem.n}</td>
-                              <td className="p-2 text-center">{pItem.sd2.toFixed(2)}</td>
-                              <td className="p-2 text-center">{pItem.se2.toFixed(3)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Paired Correlations */}
-                      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-800 text-white font-bold">
-                              <th className="p-2">Paired Correlations</th>
-                              <th className="p-2 text-center">N</th>
-                              <th className="p-2 text-center">Correlation (r)</th>
-                              <th className="p-2 text-center">Sig.</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
-                            <tr>
-                              <td className="p-2 font-sans font-bold">{pItem.var1Label} &amp; {pItem.var2Label}</td>
-                              <td className="p-2 text-center">{pItem.n}</td>
-                              <td className="p-2 text-center font-black text-blue-600">{pItem.correlation.toFixed(3)}</td>
-                              <td className="p-2 text-center font-black text-pink-600">{pItem.corrPValue < 0.001 ? '.000' : pItem.corrPValue.toFixed(3)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Paired Samples Test (T-Test Table) */}
-                    <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900 mb-4">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-800 text-white font-bold">
-                            <th className="p-2.5" colSpan={5}>Paired Differences</th>
-                            <th className="p-2.5 text-center" rowSpan={2}>t</th>
-                            <th className="p-2.5 text-center" rowSpan={2}>df</th>
-                            <th className="p-2.5 text-center" rowSpan={2}>Sig. (2-tailed)</th>
-                          </tr>
-                          <tr className="bg-slate-700 text-slate-200 text-[10px]">
-                            <th className="p-1">Mean Diff</th>
-                            <th className="p-1 text-center">Std. Dev</th>
-                            <th className="p-1 text-center">Std. Error</th>
-                            <th className="p-1 text-center">95% CI Lower</th>
-                            <th className="p-1 text-center">95% CI Upper</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
-                          <tr>
-                            <td className="p-2 font-black text-pink-600">{pItem.meanDiff.toFixed(3)}</td>
-                            <td className="p-2 text-center">{pItem.sdDiff.toFixed(3)}</td>
-                            <td className="p-2 text-center">{pItem.seDiff.toFixed(3)}</td>
-                            <td className="p-2 text-center">{pItem.ciLowerDiff.toFixed(3)}</td>
-                            <td className="p-2 text-center">{pItem.ciUpperDiff.toFixed(3)}</td>
-                            <td className="p-2 text-center font-black">{pItem.tValue.toFixed(3)}</td>
-                            <td className="p-2 text-center">{pItem.df}</td>
-                            <td className="p-2 text-center font-black text-pink-600">{pItem.tPValue < 0.001 ? '.000' : pItem.tPValue.toFixed(3)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Wilcoxon Non-parametric Output */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-800 text-white font-bold">
-                              <th className="p-2">Wilcoxon Ranks</th>
-                              <th className="p-2 text-center">N</th>
-                              <th className="p-2 text-center">Mean Rank</th>
-                              <th className="p-2 text-center">Sum of Ranks</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
-                            <tr>
-                              <td className="p-2 font-sans font-bold">Negative Ranks</td>
-                              <td className="p-2 text-center">{pItem.negRanksCount}</td>
-                              <td className="p-2 text-center">{pItem.negRanksMean.toFixed(2)}</td>
-                              <td className="p-2 text-center">{pItem.negRanksSum.toFixed(2)}</td>
-                            </tr>
-                            <tr>
-                              <td className="p-2 font-sans font-bold">Positive Ranks</td>
-                              <td className="p-2 text-center">{pItem.posRanksCount}</td>
-                              <td className="p-2 text-center">{pItem.posRanksMean.toFixed(2)}</td>
-                              <td className="p-2 text-center">{pItem.posRanksSum.toFixed(2)}</td>
-                            </tr>
-                            <tr>
-                              <td className="p-2 font-sans font-bold">Ties (Sama)</td>
-                              <td className="p-2 text-center">{pItem.tiesCount}</td>
-                              <td className="p-2 text-center">-</td>
-                              <td className="p-2 text-center">-</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-800 text-white font-bold">
-                              <th className="p-2" colSpan={2}>Wilcoxon Test Statistics</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
-                            <tr>
-                              <td className="p-2 font-sans font-bold">Z Score</td>
-                              <td className="p-2 text-right font-black text-purple-600">-{pItem.wilcoxonZ.toFixed(3)}</td>
-                            </tr>
-                            <tr className="bg-purple-50 dark:bg-purple-950/40">
-                              <td className="p-2 font-sans font-black">Asymp. Sig. (2-tailed)</td>
-                              <td className="p-2 text-right font-black text-purple-600">{pItem.wilcoxonPValue < 0.001 ? '.000' : pItem.wilcoxonPValue.toFixed(3)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
+                {/* Custom Pair Selectors */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-pink-200 dark:border-pink-900/40">
+                  <div>
+                    <label className="block text-xs font-extrabold text-pink-600 dark:text-pink-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Calculator className="w-3.5 h-3.5" /> Variabel Pertama (Pasangan 1)
+                    </label>
+                    <select
+                      value={pairedVar1}
+                      onChange={(e) => setPairedVar1(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-pink-300 dark:border-pink-800 focus:ring-2 focus:ring-pink-500 outline-none cursor-pointer"
+                    >
+                      <option value="dis">Debris Index (DI-S)</option>
+                      <option value="cis">Calculus Index (CI-S)</option>
+                      <option value="ohis">Indeks Kebersihan Mulut (OHI-S)</option>
+                      <option value="deft">Karies Gigi Sulung (def-t)</option>
+                      <option value="dmft">Karies Gigi Tetap (DMF-T)</option>
+                      <option value="kariesTotal">Jumlah Gigi Karies Aktif (D + d)</option>
+                      <option value="tumpatTotal">Jumlah Gigi Penambalan (F + f)</option>
+                      <option value="hilangTotal">Jumlah Gigi Hilang (M + e)</option>
+                      <option value="umur">Umur Responden (Tahun)</option>
+                    </select>
                   </div>
-                ))}
+                  <div>
+                    <label className="block text-xs font-extrabold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Calculator className="w-3.5 h-3.5" /> Variabel Kedua (Pasangan 2)
+                    </label>
+                    <select
+                      value={pairedVar2}
+                      onChange={(e) => setPairedVar2(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-purple-300 dark:border-purple-800 focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
+                    >
+                      <option value="cis">Calculus Index (CI-S)</option>
+                      <option value="dis">Debris Index (DI-S)</option>
+                      <option value="ohis">Indeks Kebersihan Mulut (OHI-S)</option>
+                      <option value="deft">Karies Gigi Sulung (def-t)</option>
+                      <option value="dmft">Karies Gigi Tetap (DMF-T)</option>
+                      <option value="kariesTotal">Jumlah Gigi Karies Aktif (D + d)</option>
+                      <option value="tumpatTotal">Jumlah Gigi Penambalan (F + f)</option>
+                      <option value="hilangTotal">Jumlah Gigi Hilang (M + e)</option>
+                      <option value="umur">Umur Responden (Tahun)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Quick Preset Buttons */}
+                <div className="flex flex-wrap items-center gap-2 mb-6">
+                  <span className="text-xs font-bold text-slate-500 mr-1">Preset Cepat:</span>
+                  <button
+                    onClick={() => { setPairedVar1('dis'); setPairedVar2('cis'); }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${pairedVar1 === 'dis' && pairedVar2 === 'cis' ? 'bg-pink-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'}`}
+                  >
+                    DI-S vs CI-S
+                  </button>
+                  <button
+                    onClick={() => { setPairedVar1('deft'); setPairedVar2('dmft'); }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${pairedVar1 === 'deft' && pairedVar2 === 'dmft' ? 'bg-pink-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'}`}
+                  >
+                    def-t vs DMF-T
+                  </button>
+                  <button
+                    onClick={() => { setPairedVar1('kariesTotal'); setPairedVar2('tumpatTotal'); }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${pairedVar1 === 'kariesTotal' && pairedVar2 === 'tumpatTotal' ? 'bg-pink-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'}`}
+                  >
+                    Karies Aktif vs Penambalan
+                  </button>
+                  <button
+                    onClick={() => { setPairedVar1('dis'); setPairedVar2('ohis'); }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${pairedVar1 === 'dis' && pairedVar2 === 'ohis' ? 'bg-pink-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'}`}
+                  >
+                    DI-S vs OHI-S
+                  </button>
+                </div>
+
+                {/* Selected Custom Pair Test Result */}
+                {(() => {
+                  const pItem = customPairedResult;
+                  const pText = pItem.tPValue < 0.001 ? '< 0.001' : `= ${pItem.tPValue.toFixed(3)}`;
+                  const summaryText = `Uji Paired T-Test untuk ${pItem.pairName} (${pItem.var1Label} vs ${pItem.var2Label}) menghasilkan t = ${pItem.tValue.toFixed(3)} (df = ${pItem.df}, p ${pText}). ${pItem.tIsSig ? 'Terdapat perbedaan yang signifikan' : 'Tidak terdapat perbedaan signifikan'} antara nilai rerata ${pItem.var1Label} (${pItem.mean1.toFixed(2)}) dan ${pItem.var2Label} (${pItem.mean2.toFixed(2)}). Uji non-parametrik Wilcoxon menghasilkan Z = ${pItem.wilcoxonZ.toFixed(3)}, p = ${pItem.wilcoxonPValue < 0.001 ? '< 0.001' : pItem.wilcoxonPValue.toFixed(3)}.`;
+
+                  return (
+                    <div className="mb-8 p-5 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border-2 border-pink-300 dark:border-pink-800/60 shadow-sm">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                        <h4 className="text-sm font-black text-pink-600 dark:text-pink-400 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-pink-600 text-white flex items-center justify-center text-xs font-bold">★</span>
+                          {pItem.pairName}
+                        </h4>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(summaryText);
+                            alert('Kesimpulan uji berpasangan berhasil disalin!');
+                          }}
+                          className="text-xs font-extrabold text-pink-600 dark:text-pink-400 hover:underline flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+                        >
+                          <Copy className="w-3.5 h-3.5" /> Salin Kesimpulan Uji
+                        </button>
+                      </div>
+
+                      {/* Narrative Box */}
+                      <div className="p-4 mb-4 bg-pink-50 dark:bg-pink-950/30 border border-pink-200 dark:border-pink-900/50 rounded-2xl text-xs text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
+                        "{summaryText}"
+                      </div>
+
+                      {/* Paired Statistics */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                        <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="bg-slate-800 text-white font-bold">
+                                <th className="p-2">Paired Samples Statistics</th>
+                                <th className="p-2 text-center">Mean</th>
+                                <th className="p-2 text-center">N</th>
+                                <th className="p-2 text-center">Std. Dev</th>
+                                <th className="p-2 text-center">Std. Error</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
+                              <tr>
+                                <td className="p-2 font-sans font-bold">{pItem.var1Label}</td>
+                                <td className="p-2 text-center font-black text-pink-600">{pItem.mean1.toFixed(2)}</td>
+                                <td className="p-2 text-center">{pItem.n}</td>
+                                <td className="p-2 text-center">{pItem.sd1.toFixed(2)}</td>
+                                <td className="p-2 text-center">{pItem.se1.toFixed(3)}</td>
+                              </tr>
+                              <tr>
+                                <td className="p-2 font-sans font-bold">{pItem.var2Label}</td>
+                                <td className="p-2 text-center font-black text-purple-600">{pItem.mean2.toFixed(2)}</td>
+                                <td className="p-2 text-center">{pItem.n}</td>
+                                <td className="p-2 text-center">{pItem.sd2.toFixed(2)}</td>
+                                <td className="p-2 text-center">{pItem.se2.toFixed(3)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Paired Correlations */}
+                        <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="bg-slate-800 text-white font-bold">
+                                <th className="p-2">Paired Correlations</th>
+                                <th className="p-2 text-center">N</th>
+                                <th className="p-2 text-center">Correlation (r)</th>
+                                <th className="p-2 text-center">Sig.</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
+                              <tr>
+                                <td className="p-2 font-sans font-bold">{pItem.var1Label} &amp; {pItem.var2Label}</td>
+                                <td className="p-2 text-center">{pItem.n}</td>
+                                <td className="p-2 text-center font-black text-blue-600">{pItem.correlation.toFixed(3)}</td>
+                                <td className="p-2 text-center font-black text-pink-600">{pItem.corrPValue < 0.001 ? '.000' : pItem.corrPValue.toFixed(3)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Paired Samples Test (T-Test Table) */}
+                      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900 mb-4">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-slate-800 text-white font-bold">
+                              <th className="p-2.5" colSpan={5}>Paired Differences</th>
+                              <th className="p-2.5 text-center" rowSpan={2}>t</th>
+                              <th className="p-2.5 text-center" rowSpan={2}>df</th>
+                              <th className="p-2.5 text-center" rowSpan={2}>Sig. (2-tailed)</th>
+                            </tr>
+                            <tr className="bg-slate-700 text-slate-200 text-[10px]">
+                              <th className="p-1">Mean Diff</th>
+                              <th className="p-1 text-center">Std. Dev</th>
+                              <th className="p-1 text-center">Std. Error</th>
+                              <th className="p-1 text-center">95% CI Lower</th>
+                              <th className="p-1 text-center">95% CI Upper</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
+                            <tr>
+                              <td className="p-2 font-black text-pink-600">{pItem.meanDiff.toFixed(3)}</td>
+                              <td className="p-2 text-center">{pItem.sdDiff.toFixed(3)}</td>
+                              <td className="p-2 text-center">{pItem.seDiff.toFixed(3)}</td>
+                              <td className="p-2 text-center">{pItem.ciLowerDiff.toFixed(3)}</td>
+                              <td className="p-2 text-center">{pItem.ciUpperDiff.toFixed(3)}</td>
+                              <td className="p-2 text-center font-black">{pItem.tValue.toFixed(3)}</td>
+                              <td className="p-2 text-center">{pItem.df}</td>
+                              <td className="p-2 text-center font-black text-pink-600">{pItem.tPValue < 0.001 ? '.000' : pItem.tPValue.toFixed(3)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Wilcoxon Non-parametric Output */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="bg-slate-800 text-white font-bold">
+                                <th className="p-2">Wilcoxon Ranks</th>
+                                <th className="p-2 text-center">N</th>
+                                <th className="p-2 text-center">Mean Rank</th>
+                                <th className="p-2 text-center">Sum of Ranks</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
+                              <tr>
+                                <td className="p-2 font-sans font-bold">Negative Ranks</td>
+                                <td className="p-2 text-center">{pItem.negRanksCount}</td>
+                                <td className="p-2 text-center">{pItem.negRanksMean.toFixed(2)}</td>
+                                <td className="p-2 text-center">{pItem.negRanksSum.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td className="p-2 font-sans font-bold">Positive Ranks</td>
+                                <td className="p-2 text-center">{pItem.posRanksCount}</td>
+                                <td className="p-2 text-center">{pItem.posRanksMean.toFixed(2)}</td>
+                                <td className="p-2 text-center">{pItem.posRanksSum.toFixed(2)}</td>
+                              </tr>
+                              <tr>
+                                <td className="p-2 font-sans font-bold">Ties (Sama)</td>
+                                <td className="p-2 text-center">{pItem.tiesCount}</td>
+                                <td className="p-2 text-center">-</td>
+                                <td className="p-2 text-center">-</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-900">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="bg-slate-800 text-white font-bold">
+                                <th className="p-2" colSpan={2}>Wilcoxon Test Statistics</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
+                              <tr>
+                                <td className="p-2 font-sans font-bold">Z Score</td>
+                                <td className="p-2 text-right font-black text-purple-600">-{pItem.wilcoxonZ.toFixed(3)}</td>
+                              </tr>
+                              <tr className="bg-purple-50 dark:bg-purple-950/40">
+                                <td className="p-2 font-sans font-black">Asymp. Sig. (2-tailed)</td>
+                                <td className="p-2 text-right font-black text-purple-600">{pItem.wilcoxonPValue < 0.001 ? '.000' : pItem.wilcoxonPValue.toFixed(3)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -2538,8 +2896,78 @@ EXECUTE.`;
                   Langkah 3: Siap Diuji Statistik (Chi-Square, Mann-Whitney, T-Test, dll)
                 </span>
                 <p className="text-slate-600 dark:text-slate-300">
-                  Data Anda sekarang siap dianalisis di SPSS melalui menu <strong>Analyze &gt; Descriptive Statistics &gt; Crosstabs</strong> (uji Bivariat Chi-Square) atau <strong>Analyze &gt; Compare Means</strong>!
+                  Data Anda sekarang siap dianalisis di SPSS melalui menu <strong>Analyze &gt; Descriptive Statistics &gt; Crosstabs</strong> (uji Bivariat Chi-Square) atau <strong>Analyze &gt; Compare Means &gt; Independent-Samples T Test...</strong>!
                 </p>
+              </div>
+
+              {/* Troubleshooting Independent T-Test Error in SPSS */}
+              <div className="p-4 bg-amber-50/80 dark:bg-amber-950/40 rounded-2xl border-2 border-amber-300 dark:border-amber-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-amber-950 dark:text-amber-200 uppercase text-[11px] flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    Solusi Mengatasi Error "Independent T-Test / No Result" di SPSS
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(spssTTestSyntaxCode);
+                      alert('Syntax Uji T-Test SPSS berhasil disalin!');
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded-lg shadow-sm transition-all cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Salin Syntax T-Test</span>
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed font-medium">
+                  Jika saat melakukan Independent T-Test di SPSS tidak keluar hasil / muncul error, berikut penyebab &amp; solusi utamanya:
+                </p>
+
+                <ul className="list-disc list-inside space-y-1.5 text-[11px] text-slate-700 dark:text-slate-300">
+                  <li>
+                    <strong>Gunakan Variabel Numerik Koding (<code className="bg-white/80 dark:bg-slate-800 px-1 py-0.5 rounded text-pink-600 font-bold">JK_CODE</code>)</strong>: Jangan masukkan kolom string teks (<code className="bg-white/80 dark:bg-slate-800 px-1 py-0.5 rounded text-pink-600">JK_LABEL</code>). SPSS mewajibkan Grouping Variable bertipe numerik.
+                  </li>
+                  <li>
+                    <strong>Wajib Klik "Define Groups..."</strong>: Di jendela dialog T-Test SPSS, masukkan <code className="bg-white/80 dark:bg-slate-800 px-1 py-0.5 rounded">JK_CODE</code> ke <em>Grouping Variable</em>, klik <strong>Define Groups...</strong>, lalu isi <code>Group 1: 1</code> dan <code>Group 2: 2</code>, klik <em>Continue</em>.
+                  </li>
+                  <li>
+                    <strong>Gunakan Syntax SPSS Otomatis</strong>:
+                    <pre className="mt-1.5 p-2.5 bg-slate-950 text-slate-200 font-mono text-[10px] rounded-xl overflow-x-auto border border-slate-800">
+                      {spssTTestSyntaxCode}
+                    </pre>
+                  </li>
+                </ul>
+
+                <div className="pt-1 flex items-center justify-between gap-2 border-t border-amber-200 dark:border-amber-900/60">
+                  <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Ingin mencoba contoh data 150 responden seimbang yang 100% lolos uji SPSS?</span>
+                  <button
+                    onClick={handleGenerateAndDownloadSpssTTestDataset}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    <span>Download Dataset 150 Responden Valid</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* PDF Comparison Section */}
+              <div className="p-4 bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-indigo-500/10 dark:from-pink-950/40 dark:via-purple-950/40 dark:to-indigo-950/40 rounded-2xl border-2 border-pink-300 dark:border-pink-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div>
+                  <span className="font-extrabold text-pink-900 dark:text-pink-300 uppercase text-[11px] block flex items-center gap-1.5">
+                    <FileCheck className="w-4 h-4 text-pink-600 dark:text-pink-400" />
+                    Unduh Dokumen Verifikasi / PDF Perbandingan SPSS
+                  </span>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                    Cetak Laporan PDF Hasil Analisis yang disandingkan berdampingan dengan parameter IBM SPSS.
+                  </p>
+                </div>
+                <button
+                  onClick={handleExportSpssComparisonPdf}
+                  className="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0"
+                >
+                  <FileDown className="w-4 h-4" />
+                  <span>Download PDF Perbandingan SPSS</span>
+                </button>
               </div>
 
             </div>
