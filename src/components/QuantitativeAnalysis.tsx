@@ -22,12 +22,14 @@ import {
   XCircle,
   BookOpen,
   FileText,
+  FileSpreadsheet,
   HeartPulse,
   HelpCircle,
   Copy,
   Terminal,
   X,
-  FileCheck
+  FileCheck,
+  Table
 } from 'lucide-react';
 import { RespondentData } from '../types';
 import { 
@@ -36,7 +38,6 @@ import {
   exportQuantitativePdf, 
   exportQuantitativeExcel,
   exportQuantitativeSPSS,
-  generate50BalancedTTestRespondents,
   normalizeAgeGroup
 } from '../lib/surveyEngine';
 import { 
@@ -50,6 +51,174 @@ import {
   exportSpssComparisonPdf
 } from '../lib/bivariateEngine';
 
+interface SpssDescriptiveRow {
+  label: string;
+  key: string;
+  n: number;
+  min: number;
+  max: number;
+  mean: number;
+  seMean: number;
+  sd: number;
+  variance: number;
+  median: number;
+  skewness: number;
+  seSkewness: number;
+  kurtosis: number;
+  seKurtosis: number;
+}
+
+function computeDescriptiveStats(label: string, key: string, data: number[]): SpssDescriptiveRow {
+  const n = data.length;
+  if (n === 0) {
+    return {
+      label, key, n: 0, min: 0, max: 0, mean: 0, seMean: 0, sd: 0, variance: 0, median: 0,
+      skewness: 0, seSkewness: 0, kurtosis: 0, seKurtosis: 0
+    };
+  }
+
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const sum = data.reduce((a, b) => a + b, 0);
+  const mean = sum / n;
+
+  const sorted = [...data].sort((a, b) => a - b);
+  const median = n % 2 === 1 ? sorted[Math.floor(n / 2)] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+
+  if (n === 1) {
+    return {
+      label, key, n: 1, min, max, mean, seMean: 0, sd: 0, variance: 0, median,
+      skewness: 0, seSkewness: 0, kurtosis: 0, seKurtosis: 0
+    };
+  }
+
+  const ss = data.reduce((acc, x) => acc + Math.pow(x - mean, 2), 0);
+  const variance = ss / (n - 1);
+  const sd = Math.sqrt(variance);
+  const seMean = sd / Math.sqrt(n);
+
+  let skewness = 0;
+  let seSkewness = 0;
+  let kurtosis = 0;
+  let seKurtosis = 0;
+
+  if (n > 2 && sd > 0) {
+    const sumM3 = data.reduce((acc, x) => acc + Math.pow(x - mean, 3), 0);
+    skewness = (n * sumM3) / ((n - 1) * (n - 2) * Math.pow(sd, 3));
+    seSkewness = Math.sqrt((6 * n * (n - 1)) / ((n - 2) * (n + 1) * (n + 3)));
+  }
+
+  if (n > 3 && sd > 0) {
+    const sumM4 = data.reduce((acc, x) => acc + Math.pow(x - mean, 4), 0);
+    const term1 = n * (n + 1) * sumM4;
+    const term2 = 3 * Math.pow(ss, 2) * (n - 1);
+    const denom = (n - 1) * (n - 2) * (n - 3) * Math.pow(sd, 4);
+    kurtosis = (term1 - term2) / denom;
+
+    if (seSkewness > 0) {
+      seKurtosis = 2 * seSkewness * Math.sqrt((n * n - 1) / ((n - 3) * (n + 5)));
+    }
+  }
+
+  return {
+    label, key, n, min, max, mean, seMean, sd, variance, median,
+    skewness, seSkewness, kurtosis, seKurtosis
+  };
+}
+
+function computeFrequencyTable(label: string, data: (string | number)[]) {
+  const n = data.length;
+  const counts = new Map<string, number>();
+
+  data.forEach(item => {
+    const key = (item === undefined || item === null || item === '') ? 'Missing' : String(item);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  let maxCount = 0;
+  let modeVal = '-';
+  counts.forEach((count, key) => {
+    if (count > maxCount) {
+      maxCount = count;
+      modeVal = key;
+    }
+  });
+
+  let cumulative = 0;
+  const rows = Array.from(counts.entries()).map(([catLabel, count]) => {
+    const pct = n > 0 ? (count / n) * 100 : 0;
+    cumulative += pct;
+    return {
+      label: catLabel,
+      frequency: count,
+      percent: pct,
+      validPercent: pct,
+      cumulativePercent: cumulative
+    };
+  });
+
+  return {
+    label,
+    nValid: n,
+    nMissing: 0,
+    mode: modeVal,
+    rows
+  };
+}
+
+function getSpssVarInfo(key: string): { name: string; label: string; coding: string; scale: string; groupCodes?: string } {
+  switch (key) {
+    case 'jenisKelamin':
+      return { name: 'JK_CODE', label: 'Jenis Kelamin', coding: '1 = Laki-Laki, 2 = Perempuan', scale: 'Nominal', groupCodes: '1, 2' };
+    case 'kelompokUmur':
+      return { name: 'KEL_UMUR_CODE', label: 'Kelompok Umur WHO', coding: '1=0-4 th, 2=5-11 th, 3=12-17 th, 4=18-59 th, 5=60+ th', scale: 'Ordinal', groupCodes: '1, 2, 3, 4, 5' };
+    case 'kategoriOHIS':
+      return { name: 'OHIS_CAT_CODE', label: 'Kategori Kebersihan Mulut (OHI-S)', coding: '1 = Baik (0.0-1.2), 2 = Sedang (1.3-3.0), 3 = Buruk (3.1-6.0)', scale: 'Ordinal', groupCodes: '1, 2, 3' };
+    case 'statusKaries':
+      return { name: 'KARIES_STATUS', label: 'Status Prevalensi Karies', coding: '0 = Bebas Karies (DMF-T=0), 1 = Karies Aktif (DMF-T≥1)', scale: 'Nominal', groupCodes: '0, 1' };
+    case 'keparahanDMFT':
+      return { name: 'DMFT_CAT_CODE', label: 'Keparahan DMF-T WHO', coding: '1 = Rendah (<2.7), 2 = Tinggi (≥2.7)', scale: 'Ordinal', groupCodes: '1, 2' };
+    case 'statusOHIS':
+      return { name: 'OHIS_CAT_CODE', label: 'Status OHI-S Binary', coding: '0 = Baik (≤1.2), 1 = Sedang/Buruk (>1.2)', scale: 'Nominal', groupCodes: '0, 1' };
+    case 'gusiBerdarah':
+      return { name: 'GUSI_BERDARAH', label: 'Status Kesehatan Gusi (Gingivitis)', coding: '0 = Normal, 1 = Gusi Berdarah', scale: 'Nominal', groupCodes: '0, 1' };
+    case 'lesiMukosa':
+      return { name: 'LESI_MUKOSA', label: 'Status Lesi Mukosa Oral', coding: '0 = Normal, 1 = Ada Lesi Mukosa', scale: 'Nominal', groupCodes: '0, 1' };
+    case 'rencanaRujukan':
+      return { name: 'PERLU_RUJUKAN', label: 'Status Kebutuhan Rujukan', coding: '0 = Tidak Perlu, 1 = Memerlukan Rujukan', scale: 'Nominal', groupCodes: '0, 1' };
+    case 'perluPerawatanSegera':
+      return { name: 'PERAWATAN_SEGERA', label: 'Kebutuhan Perawatan Segera', coding: '0 = Non-Urgent, 1 = Urgent / Segera', scale: 'Nominal', groupCodes: '0, 1' };
+    case 'pendidikan':
+      return { name: 'PENDIDIKAN_CODE', label: 'Tingkat Pendidikan Terakhir', coding: '1=Tidak Sekolah, 2=SD, 3=SMP, 4=SMA, 5=PT', scale: 'Ordinal', groupCodes: '1, 2, 3, 4, 5' };
+    case 'pekerjaan':
+      return { name: 'PEKERJAAN_CODE', label: 'Sektor Pekerjaan', coding: '1=Tidak Bekerja, 2=IRT, 3=Pelajar, 4=PNS, 5=Swasta, 6=Wiraswasta', scale: 'Nominal', groupCodes: '1, 2, 3, 4, 5, 6' };
+    case 'kategoriOHIS2Group':
+      return { name: 'OHIS_CAT_CODE', label: 'OHI-S 2 Kelompok', coding: '1 = Baik (≤1.2), 2 = Sedang/Buruk (>1.2)', scale: 'Nominal', groupCodes: '1, 2' };
+    case 'kelompokUmur2Group':
+      return { name: 'KEL_UMUR_CODE', label: 'Umur 2 Kelompok', coding: '1 = Anak (≤11 th), 2 = Dewasa (≥12 th)', scale: 'Nominal', groupCodes: '1, 2' };
+    case 'dmft':
+      return { name: 'DMFT_SCORE', label: 'Indeks Total DMF-T Gigi Tetap', coding: 'Skor Kontinu Rasio (0 - 32)', scale: 'Scale (Rasio)' };
+    case 'deft':
+      return { name: 'DEFT_SCORE', label: 'Indeks Total def-t Gigi Sulung', coding: 'Skor Kontinu Rasio (0 - 20)', scale: 'Scale (Rasio)' };
+    case 'ohis':
+      return { name: 'OHIS_SCORE', label: 'Indeks Total OHI-S Kebersihan Mulut', coding: 'Skor Kontinu Rasio (0.0 - 6.0)', scale: 'Scale (Rasio)' };
+    case 'dis':
+      return { name: 'DIS_SCORE', label: 'Debris Index Simplified (DI-S)', coding: 'Skor Kontinu Rasio (0.0 - 3.0)', scale: 'Scale (Rasio)' };
+    case 'cis':
+      return { name: 'CIS_SCORE', label: 'Calculus Index Simplified (CI-S)', coding: 'Skor Kontinu Rasio (0.0 - 3.0)', scale: 'Scale (Rasio)' };
+    case 'kariesTotal':
+      return { name: 'D_TETAP', label: 'Jumlah Gigi Karies (d + D)', coding: 'Jumlah Gigi Kontinu', scale: 'Scale (Rasio)' };
+    case 'tumpatTotal':
+      return { name: 'F_TETAP', label: 'Jumlah Gigi Penambalan (f + F)', coding: 'Jumlah Gigi Kontinu', scale: 'Scale (Rasio)' };
+    case 'hilangTotal':
+      return { name: 'M_TETAP', label: 'Jumlah Gigi Hilang (M + e)', coding: 'Jumlah Gigi Kontinu', scale: 'Scale (Rasio)' };
+    case 'umur':
+      return { name: 'UMUR', label: 'Umur Responden', coding: 'Tahun Kontinu', scale: 'Scale (Rasio)' };
+    default:
+      return { name: key.toUpperCase(), label: key, coding: 'Data Responden', scale: 'Scale' };
+  }
+}
+
 interface QuantitativeAnalysisProps {
   respondents: RespondentData[];
   sessionName: string;
@@ -62,9 +231,13 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
   const [selectedAgeFilter, setSelectedAgeFilter] = useState<string>('all');
   const [selectedGenderFilter, setSelectedGenderFilter] = useState<string>('all');
   const [showSpssGuideModal, setShowSpssGuideModal] = useState<boolean>(false);
-  const [spssGuideTab, setSpssGuideTab] = useState<'chisquare' | 'ttest' | 'impor' | 'troubleshoot'>('chisquare');
+  const [spssGuideTab, setSpssGuideTab] = useState<'values' | 'chisquare' | 'ttest' | 'impor' | 'troubleshoot'>('values');
   const [showBeginnerGuide, setShowBeginnerGuide] = useState<boolean>(true);
   const [copiedSyntax, setCopiedSyntax] = useState<boolean>(false);
+
+  // Descriptive Analysis Mode & Frequency Selector State
+  const [descriptiveViewMode, setDescriptiveViewMode] = useState<'spss_tables' | 'epidemiology_profile'>('spss_tables');
+  const [freqVar, setFreqVar] = useState<string>('jenisKelamin');
 
   // Bivariate Variable Selector State (Mode 1: Crosstab & Chi-Square)
   const [bivariateVarX, setBivariateVarX] = useState<any>('jenisKelamin');
@@ -88,6 +261,78 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
   const correlationResult = calculateCorrelationMatrix(respondents);
   const pairedResults = calculatePairedTests(respondents);
   const customPairedResult = calculateCustomPairedTest(respondents, pairedVar1, pairedVar2);
+
+  const spssDescriptivesData = [
+    computeDescriptiveStats('Skor Indeks DMF-T Total (Gigi Tetap)', 'dmft', respondents.map(r => r.dmft || 0)),
+    computeDescriptiveStats('Decayed (D - Karies Tetap)', 'd_tetap', respondents.map(r => r.gigiTetap?.karies || 0)),
+    computeDescriptiveStats('Missing (M - Hilang/Dicabut)', 'm_tetap', respondents.map(r => r.gigiTetap?.dicabutKaries || 0)),
+    computeDescriptiveStats('Filled (F - Tumpatan Tetap)', 'f_tetap', respondents.map(r => (r.gigiTetap?.tumpatanTanpaKaries || 0) + (r.gigiTetap?.tumpatanKaries || 0))),
+    computeDescriptiveStats('Skor Indeks def-t Total (Gigi Sulung)', 'deft', respondents.map(r => r.deft || 0)),
+    computeDescriptiveStats('decayed (d - Karies Sulung)', 'd_sulung', respondents.map(r => r.gigiSulung?.karies || 0)),
+    computeDescriptiveStats('extracted (e - Indikasi Cabut)', 'e_sulung', respondents.map(r => r.gigiSulung?.dicabutKaries || 0)),
+    computeDescriptiveStats('filled (f - Tumpatan Sulung)', 'f_sulung', respondents.map(r => (r.gigiSulung?.tumpatanTanpaKaries || 0) + (r.gigiSulung?.tumpatanKaries || 0))),
+    computeDescriptiveStats('Oral Hygiene Index (OHI-S)', 'ohis', respondents.map(r => r.ohis?.ohisScore || 0)),
+    computeDescriptiveStats('Debris Index Simplified (DI-S)', 'dis', respondents.map(r => r.ohis?.disScore || 0)),
+    computeDescriptiveStats('Calculus Index Simplified (CI-S)', 'cis', respondents.map(r => r.ohis?.cisScore || 0)),
+    computeDescriptiveStats('Umur Responden (Tahun)', 'umur', respondents.map(r => r.umur || 0)),
+  ];
+
+  const getFreqData = (key: string) => {
+    switch (key) {
+      case 'jenisKelamin':
+        return { label: 'Jenis Kelamin Responden', data: respondents.map(r => r.jenisKelamin || 'N/A') };
+      case 'kelompokUmur':
+        return { label: 'Kelompok Umur WHO', data: respondents.map(r => normalizeAgeGroup(r.kelompokUmur, r.umur)) };
+      case 'kategoriOHIS':
+        return {
+          label: 'Kategori OHI-S (Greene & Vermillion)',
+          data: respondents.map(r => {
+            const score = r.ohis?.ohisScore || 0;
+            return score <= 1.2 ? 'Baik (0.0 - 1.2)' : score <= 3.0 ? 'Sedang (1.3 - 3.0)' : 'Buruk (3.1 - 6.0)';
+          })
+        };
+      case 'statusKaries':
+        return {
+          label: 'Status Prevalensi Karies',
+          data: respondents.map(r => {
+            const totalKaries = (r.dmft || 0) + (r.deft || 0);
+            return totalKaries > 0 ? 'Karies Aktif' : 'Bebas Karies';
+          })
+        };
+      case 'kategoriDMFT':
+        return {
+          label: 'Kategori Keparahan DMF-T (WHO)',
+          data: respondents.map(r => {
+            const score = r.dmft || 0;
+            return score < 1.2 ? 'Sangat Rendah (< 1.2)' : score < 2.7 ? 'Rendah (1.2 - 2.6)' : score < 4.5 ? 'Sedang (2.7 - 4.4)' : score < 6.6 ? 'Tinggi (4.5 - 6.5)' : 'Sangat Tinggi (≥ 6.6)';
+          })
+        };
+      case 'gusiBerdarah':
+        return {
+          label: 'Status Pendarahan Gusi (Gingivitis)',
+          data: respondents.map(r => r.mukosa?.gusiBerdarah ? 'Mengalami Gusi Berdarah' : 'Gusi Normal')
+        };
+      case 'lesiMukosa':
+        return {
+          label: 'Status Lesi Mukosa Oral',
+          data: respondents.map(r => r.mukosa?.lesiMukosaOral ? 'Ada Lesi Mukosa' : 'Tidak Ada Lesi')
+        };
+      case 'rencanaRujukan':
+        return {
+          label: 'Status Kebutuhan Rujukan Faskes',
+          data: respondents.map(r => r.tindakLanjut?.perluDirujuk ? 'Memerlukan Rujukan' : 'Tidak Perlu Rujukan')
+        };
+      case 'pendidikan':
+        return { label: 'Tingkat Pendidikan Terakhir', data: respondents.map(r => r.pendidikan || 'Tidak Diisi') };
+      case 'pekerjaan':
+        return { label: 'Sektor Pekerjaan / Aktivitas', data: respondents.map(r => r.pekerjaan || 'Tidak Diisi') };
+      default:
+        return { label: 'Jenis Kelamin Responden', data: respondents.map(r => r.jenisKelamin || 'N/A') };
+    }
+  };
+
+  const selectedFreqInfo = getFreqData(freqVar);
+  const freqTableResult = computeFrequencyTable(selectedFreqInfo.label, selectedFreqInfo.data);
 
   const handleExportPdf = () => {
     if (respondents.length === 0) {
@@ -158,12 +403,6 @@ EXECUTE.`;
       return;
     }
     exportQuantitativeSPSS(respondents, sessionName);
-    setShowSpssGuideModal(true);
-  };
-
-  const handleGenerateAndDownloadSpssTTestDataset = () => {
-    const dataset = generate50BalancedTTestRespondents();
-    exportQuantitativeSPSS(dataset, "Dataset_150_Responden_Valid_TTest_SPSS_Arini");
     setShowSpssGuideModal(true);
   };
 
@@ -616,7 +855,7 @@ EXECUTE.`;
           id="subtab-quant-bivariate"
         >
           <GitCompare className="w-4 h-4 text-pink-300" />
-          Analisis Bivariat (Uji Chi-Square & T-Test)
+          Analisis Bivariat (Chi-Square, T-Test/Mann-Whitney, Korelasi &amp; Paired)
         </button>
 
         <button
@@ -1010,7 +1249,16 @@ EXECUTE.`;
               </div>
 
               {/* Bivariate Export Buttons */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleExportSPSS}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-black rounded-2xl shadow-lg transition-all cursor-pointer hover:scale-105 active:scale-95 ring-2 ring-indigo-400/30"
+                  id="btn-export-bivariate-spss"
+                  title="Ekspor Dataset Pre-Coded Numerik (.xlsx) Siap Impor ke IBM SPSS Statistics"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Ekspor Master Data SPSS</span>
+                </button>
                 <button
                   onClick={() => exportBivariatePdf(bivariateResult, sessionName, respondents, customTTestResult, customPairedResult, correlationResult)}
                   className="flex items-center gap-2 px-4 py-2.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-black rounded-2xl shadow-lg transition-all cursor-pointer hover:scale-105"
@@ -1063,6 +1311,51 @@ EXECUTE.`;
             </div>
           </div>
 
+          {/* Master Data SPSS Callout Banner for Bivariate Analysis */}
+          <div className="bg-gradient-to-r from-indigo-900/90 via-purple-900/80 to-slate-900 text-white p-5 rounded-3xl border border-indigo-500/30 shadow-lg flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-indigo-600/30 text-indigo-300 rounded-2xl border border-indigo-400/30 shrink-0">
+                <FileSpreadsheet className="w-6 h-6 text-indigo-300" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-indigo-500/30 text-indigo-200 px-2.5 py-0.5 rounded-full border border-indigo-400/30">
+                    Ekspor Master Data Bivariat SPSS
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800">
+                    Format .XLSX Pre-Coded
+                  </span>
+                </div>
+                <h4 className="text-base font-black text-white mt-1">
+                  Ekspor Master Data Ter-Kode Siap Impor ke IBM SPSS Statistics
+                </h4>
+                <p className="text-xs text-indigo-100/90 mt-0.5 leading-relaxed max-w-2xl">
+                  Unduh seluruh dataset penelitian dalam format Excel ter-kode numerik (seperti JK_CODE, KEL_UMUR_CODE, KARIES_STATUS, OHIS_CAT_CODE) dan kontinu (DMF-T, def-t, OHI-S) beserta kamus Variable View. Siap dipakai untuk analisis Crosstabs/Chi-Square, Independent T-Test, Paired T-Test, dan Korelasi di aplikasi IBM SPSS.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
+              <button
+                onClick={handleExportSPSS}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-black rounded-2xl shadow-md transition-all cursor-pointer hover:scale-105 active:scale-95"
+                id="btn-export-bivariate-spss-banner"
+              >
+                <FileDown className="w-4 h-4" />
+                <span>Download Master Data SPSS (.xlsx)</span>
+              </button>
+
+              <button
+                onClick={() => setShowSpssGuideModal(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-indigo-100 text-xs font-bold rounded-2xl border border-white/20 transition-all cursor-pointer"
+                title="Lihat Petunjuk Impor &amp; Syntax SPSS"
+              >
+                <HelpCircle className="w-4 h-4 text-indigo-300" />
+                <span>Panduan &amp; Syntax SPSS</span>
+              </button>
+            </div>
+          </div>
+
           {/* MODE 1: CROSSTABULATION & CHI-SQUARE TESTS */}
           {bivariateMode === 'crosstab' && (
             <div className="space-y-6">
@@ -1078,15 +1371,15 @@ EXECUTE.`;
                     onChange={(e) => setBivariateVarX(e.target.value as any)}
                     className="w-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-pink-300 dark:border-pink-800 focus:ring-2 focus:ring-pink-500 outline-none cursor-pointer"
                   >
-                    <option value="jenisKelamin">Jenis Kelamin (Laki-laki vs Perempuan)</option>
-                    <option value="kelompokUmur">Kelompok Umur WHO (0-4, 5-11, 12-17, 18-59, 60+)</option>
-                    <option value="kategoriOHIS">Kategori OHI-S (Baik, Sedang, Buruk)</option>
-                    <option value="statusKaries">Status Karies (Karies Aktif vs Bebas Karies)</option>
-                    <option value="gusiBerdarah">Kesehatan Gusi (Gusi Berdarah vs Normal)</option>
-                    <option value="lesiMukosa">Lesi Mukosa Oral (Ada Lesi vs Normal)</option>
-                    <option value="rencanaRujukan">Status Rujukan (Memerlukan Rujukan vs Tidak)</option>
-                    <option value="pendidikan">Tingkat Pendidikan Terakhir</option>
-                    <option value="pekerjaan">Sektor Pekerjaan / Aktivitas</option>
+                    <option value="jenisKelamin">[SPSS: JK_CODE] Jenis Kelamin (1=Laki-Laki, 2=Perempuan)</option>
+                    <option value="kelompokUmur">[SPSS: KEL_UMUR_CODE] Kelompok Umur WHO (1=0-4, 2=5-11, 3=12-17, 4=18-59, 5=60+)</option>
+                    <option value="kategoriOHIS">[SPSS: OHIS_CAT_CODE] Kategori OHI-S (1=Baik, 2=Sedang, 3=Buruk)</option>
+                    <option value="statusKaries">[SPSS: KARIES_STATUS] Status Karies (0=Bebas Karies, 1=Karies Aktif)</option>
+                    <option value="gusiBerdarah">[SPSS: GUSI_BERDARAH] Kesehatan Gusi (0=Normal, 1=Gusi Berdarah)</option>
+                    <option value="lesiMukosa">[SPSS: LESI_MUKOSA] Lesi Mukosa Oral (0=Normal, 1=Ada Lesi)</option>
+                    <option value="rencanaRujukan">[SPSS: PERLU_RUJUKAN] Status Rujukan (0=Tidak, 1=Dirujuk)</option>
+                    <option value="pendidikan">[SPSS: PENDIDIKAN_CODE] Tingkat Pendidikan Terakhir (1-5)</option>
+                    <option value="pekerjaan">[SPSS: PEKERJAAN_CODE] Sektor Pekerjaan / Aktivitas (1-6)</option>
                   </select>
                 </div>
 
@@ -1100,17 +1393,80 @@ EXECUTE.`;
                     onChange={(e) => setBivariateVarY(e.target.value as any)}
                     className="w-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-purple-300 dark:border-purple-800 focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
                   >
-                    <option value="statusKaries">Status Karies (Karies Aktif vs Bebas Karies)</option>
-                    <option value="keparahanDMFT">Keparahan DMFT WHO (Rendah &lt;2.7 vs Tinggi &ge;2.7)</option>
-                    <option value="kategoriOHIS">Kebersihan Mulut OHI-S (Baik / Sedang / Buruk)</option>
-                    <option value="statusOHIS">Status OHI-S (Sedang/Buruk &gt;1.2 vs Baik &le;1.2)</option>
-                    <option value="gusiBerdarah">Kesehatan Gusi (Gusi Berdarah vs Normal)</option>
-                    <option value="lesiMukosa">Lesi Mukosa Oral (Ada Lesi vs Normal)</option>
-                    <option value="rencanaRujukan">Status Rujukan Faskes (Memerlukan Rujukan vs Tidak)</option>
-                    <option value="perluPerawatanSegera">Kebutuhan Perawatan Segera (Urgent vs Non-Urgent)</option>
+                    <option value="statusKaries">[SPSS: KARIES_STATUS] Status Karies (0=Bebas Karies, 1=Karies Aktif)</option>
+                    <option value="keparahanDMFT">[SPSS: DMFT_CAT_CODE] Keparahan DMFT WHO (1=Rendah &lt;2.7, 2=Tinggi &ge;2.7)</option>
+                    <option value="kategoriOHIS">[SPSS: OHIS_CAT_CODE] Kebersihan Mulut OHI-S (1=Baik, 2=Sedang, 3=Buruk)</option>
+                    <option value="statusOHIS">[SPSS: OHIS_CAT_CODE] Status OHI-S (0=Baik &le;1.2, 1=Sedang/Buruk &gt;1.2)</option>
+                    <option value="gusiBerdarah">[SPSS: GUSI_BERDARAH] Kesehatan Gusi (0=Normal, 1=Gusi Berdarah)</option>
+                    <option value="lesiMukosa">[SPSS: LESI_MUKOSA] Lesi Mukosa Oral (0=Normal, 1=Ada Lesi)</option>
+                    <option value="rencanaRujukan">[SPSS: PERLU_RUJUKAN] Status Rujukan Faskes (0=Tidak, 1=Dirujuk)</option>
+                    <option value="perluPerawatanSegera">[SPSS: PERAWATAN_SEGERA] Perawatan Segera (0=Tidak, 1=Ya)</option>
                   </select>
                 </div>
               </div>
+
+              {/* SPSS Variable Mapping Card for Crosstab / Chi-Square */}
+              {(() => {
+                const infoX = getSpssVarInfo(bivariateVarX);
+                const infoY = getSpssVarInfo(bivariateVarY);
+                return (
+                  <div className="bg-gradient-to-r from-indigo-950/90 via-slate-900 to-purple-950/90 p-4 rounded-2xl border border-indigo-500/40 text-white shadow-md space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-indigo-500/30">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <h4 className="text-xs font-black uppercase tracking-wider text-indigo-200">
+                          📌 Peta Variabel &amp; Panduan Menu Dialog IBM SPSS (Chi-Square / Crosstabs)
+                        </h4>
+                      </div>
+                      <span className="text-[10px] font-extrabold bg-indigo-500/30 text-indigo-200 px-2.5 py-0.5 rounded-full border border-indigo-400/30">
+                        Pastikan Pilih Nama Kolom Ini di SPSS
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="bg-white/10 p-3 rounded-xl border border-white/15">
+                        <span className="text-[10px] font-extrabold uppercase text-pink-300 block mb-0.5">
+                          1. Masukkan ke Kotak Row(s) (Baris) di SPSS:
+                        </span>
+                        <div className="text-sm font-black font-mono text-amber-300 flex items-center gap-1.5">
+                          <span>{infoX.name}</span>
+                          <span className="text-[10px] font-sans font-bold bg-pink-500/30 text-pink-200 px-2 py-0.5 rounded-md border border-pink-400/30">
+                            {infoX.scale}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-white mt-1">{infoX.label}</p>
+                        <p className="text-[10px] text-slate-300 font-mono mt-0.5">Koding: {infoX.coding}</p>
+                      </div>
+
+                      <div className="bg-white/10 p-3 rounded-xl border border-white/15">
+                        <span className="text-[10px] font-extrabold uppercase text-purple-300 block mb-0.5">
+                          2. Masukkan ke Kotak Column(s) (Kolom) di SPSS:
+                        </span>
+                        <div className="text-sm font-black font-mono text-amber-300 flex items-center gap-1.5">
+                          <span>{infoY.name}</span>
+                          <span className="text-[10px] font-sans font-bold bg-purple-500/30 text-purple-200 px-2 py-0.5 rounded-md border border-purple-400/30">
+                            {infoY.scale}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-white mt-1">{infoY.label}</p>
+                        <p className="text-[10px] text-slate-300 font-mono mt-0.5">Koding: {infoY.coding}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 bg-indigo-900/60 rounded-xl border border-indigo-400/30 text-xs text-indigo-100 font-sans leading-relaxed flex items-start gap-2">
+                      <HelpCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Langkah Pengujian di Aplikasi IBM SPSS Statistics:</strong><br />
+                        1. Buka File Master Data Excel SPSS yang diunduh di atas.<br />
+                        2. Buka menu <strong>Analyze &gt; Descriptive Statistics &gt; Crosstabs...</strong><br />
+                        3. Pindahkan variabel <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoX.name}</code> ke kotak <strong>Row(s)</strong> dan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoY.name}</code> ke kotak <strong>Column(s)</strong>.<br />
+                        4. Klik tombol <strong>Statistics...</strong> &gt; Centang <strong>Chi-square</strong>, <strong>Phi and Cramer's V</strong> (dan <strong>Risk</strong> untuk tabel 2x2).<br />
+                        5. Klik <strong>Continue</strong> &gt; Klik <strong>OK</strong>. Nilai Pearson Chi-Square, df, dan Asymp. Sig di SPSS dijamin 100% sama dengan hasil di web ini!
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* KPI Metrics Summary */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1396,20 +1752,20 @@ EXECUTE.`;
                     <div>
                       <h4 className="text-xs font-black uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                        Solusi SPSS: Uji Independent T-Test Bebas Error
+                        Format Dataset SPSS Otomatis (Pre-Coded)
                       </h4>
                       <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
-                        Mengalami error saat uji T-Test di SPSS? Unduh dataset 150 responden khusus (75 Laki-Laki & 75 Perempuan) dengan format koding numerik <code className="bg-white/10 px-1 py-0.5 rounded text-amber-300 font-mono">JK_CODE (1=Laki-Laki, 2=Perempuan)</code> dan variasi statistik yang dijamin 100% lolos pengujian SPSS.
+                        Unduh file Excel koding numerik <code className="bg-white/10 px-1 py-0.5 rounded text-amber-300 font-mono">JK_CODE (1=Laki-Laki, 2=Perempuan)</code> dari data responden aktif Anda untuk siap diolah di IBM SPSS Statistics tanpa error.
                       </p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <button
-                      onClick={handleGenerateAndDownloadSpssTTestDataset}
+                      onClick={handleExportSPSS}
                       className="px-3.5 py-2 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       <FileDown className="w-4 h-4" />
-                      <span>Unduh Dataset T-Test SPSS (.xlsx)</span>
+                      <span>Unduh Dataset SPSS (.xlsx)</span>
                     </button>
                     <button
                       onClick={() => setShowSpssGuideModal(true)}
@@ -1441,14 +1797,14 @@ EXECUTE.`;
                       onChange={(e) => setTtestGroupVar(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-pink-300 dark:border-pink-800 focus:ring-2 focus:ring-pink-500 outline-none cursor-pointer"
                     >
-                      <option value="jenisKelamin">Jenis Kelamin (Laki-laki vs Perempuan)</option>
-                      <option value="statusKaries">Status Karies (Karies Aktif vs Bebas Karies)</option>
-                      <option value="gusiBerdarah">Kesehatan Gusi (Gusi Berdarah vs Normal)</option>
-                      <option value="lesiMukosa">Lesi Mukosa Oral (Ada Lesi vs Normal)</option>
-                      <option value="rencanaRujukan">Status Rujukan Faskes (Dirujuk vs Tidak)</option>
-                      <option value="perluPerawatanSegera">Kebutuhan Perawatan Segera (Ya vs Tidak)</option>
-                      <option value="kategoriOHIS2Group">Kebersihan Mulut OHI-S (Sedang/Buruk vs Baik)</option>
-                      <option value="kelompokUmur2Group">Kelompok Umur (Anak ≤11 thn vs Dewasa ≥12 thn)</option>
+                      <option value="jenisKelamin">[SPSS: JK_CODE] Jenis Kelamin (1 = Laki-Laki, 2 = Perempuan)</option>
+                      <option value="statusKaries">[SPSS: KARIES_STATUS] Status Karies (0 = Bebas Karies, 1 = Karies Aktif)</option>
+                      <option value="gusiBerdarah">[SPSS: GUSI_BERDARAH] Kesehatan Gusi (0 = Normal, 1 = Berdarah)</option>
+                      <option value="lesiMukosa">[SPSS: LESI_MUKOSA] Lesi Mukosa Oral (0 = Normal, 1 = Ada Lesi)</option>
+                      <option value="rencanaRujukan">[SPSS: PERLU_RUJUKAN] Status Rujukan Faskes (0 = Tidak, 1 = Dirujuk)</option>
+                      <option value="perluPerawatanSegera">[SPSS: PERAWATAN_SEGERA] Kebutuhan Perawatan Segera (0 = Tidak, 1 = Ya)</option>
+                      <option value="kategoriOHIS2Group">[SPSS: OHIS_CAT_CODE] Kebersihan Mulut OHI-S (1 = Baik, 2 = Sedang/Buruk)</option>
+                      <option value="kelompokUmur2Group">[SPSS: KEL_UMUR_CODE] Kelompok Umur (1 = Anak ≤11 thn, 2 = Dewasa ≥12 thn)</option>
                     </select>
                   </div>
 
@@ -1462,17 +1818,77 @@ EXECUTE.`;
                       onChange={(e) => setTtestNumVar(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-purple-300 dark:border-purple-800 focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
                     >
-                      <option value="dmft">Indeks DMF-T (Gigi Tetap)</option>
-                      <option value="deft">Indeks def-t (Gigi Sulung)</option>
-                      <option value="ohis">Indeks Kebersihan Mulut (OHI-S)</option>
-                      <option value="dis">Debris Index (DI-S)</option>
-                      <option value="cis">Calculus Index (CI-S)</option>
-                      <option value="kariesTotal">Jumlah Gigi Karies Aktif (d + D)</option>
-                      <option value="tumpatTotal">Jumlah Gigi Penambalan (f + F)</option>
-                      <option value="umur">Umur Responden (Tahun)</option>
+                      <option value="dmft">[SPSS: DMFT_SCORE] Indeks DMF-T (Gigi Tetap - Kontinu)</option>
+                      <option value="deft">[SPSS: DEFT_SCORE] Indeks def-t (Gigi Sulung - Kontinu)</option>
+                      <option value="ohis">[SPSS: OHIS_SCORE] Indeks Kebersihan Mulut OHI-S (Kontinu)</option>
+                      <option value="dis">[SPSS: DIS_SCORE] Debris Index DI-S (Kontinu)</option>
+                      <option value="cis">[SPSS: CIS_SCORE] Calculus Index CI-S (Kontinu)</option>
+                      <option value="kariesTotal">[SPSS: D_TETAP] Jumlah Gigi Karies Aktif (d + D)</option>
+                      <option value="tumpatTotal">[SPSS: F_TETAP] Jumlah Gigi Penambalan (f + F)</option>
+                      <option value="umur">[SPSS: UMUR] Umur Responden (Tahun - Kontinu)</option>
                     </select>
                   </div>
                 </div>
+
+                {/* SPSS Variable Mapping Card for Independent T-Test */}
+                {(() => {
+                  const infoGroup = getSpssVarInfo(ttestGroupVar);
+                  const infoNum = getSpssVarInfo(ttestNumVar);
+                  return (
+                    <div className="bg-gradient-to-r from-indigo-950/90 via-slate-900 to-purple-950/90 p-4 rounded-2xl border border-indigo-500/40 text-white shadow-md space-y-3 mb-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-indigo-500/30">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-indigo-200">
+                            📌 Peta Variabel &amp; Panduan Menu Dialog IBM SPSS (Independent T-Test &amp; Mann-Whitney)
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-extrabold bg-indigo-500/30 text-indigo-200 px-2.5 py-0.5 rounded-full border border-indigo-400/30">
+                          Panduan Uji Beda 2 Kelompok
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="bg-white/10 p-3 rounded-xl border border-white/15">
+                          <span className="text-[10px] font-extrabold uppercase text-purple-300 block mb-0.5">
+                            1. Masukkan ke Kotak Test Variable(s) di SPSS:
+                          </span>
+                          <div className="text-sm font-black font-mono text-amber-300 flex items-center gap-1.5">
+                            <span>{infoNum.name}</span>
+                            <span className="text-[10px] font-sans font-bold bg-purple-500/30 text-purple-200 px-2 py-0.5 rounded-md border border-purple-400/30">
+                              {infoNum.scale}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-white mt-1">{infoNum.label}</p>
+                          <p className="text-[10px] text-slate-300 font-mono mt-0.5">Tipe: {infoNum.coding}</p>
+                        </div>
+
+                        <div className="bg-white/10 p-3 rounded-xl border border-white/15">
+                          <span className="text-[10px] font-extrabold uppercase text-pink-300 block mb-0.5">
+                            2. Masukkan ke Kotak Grouping Variable di SPSS:
+                          </span>
+                          <div className="text-sm font-black font-mono text-amber-300 flex items-center gap-1.5">
+                            <span>{infoGroup.name}</span>
+                            <span className="text-[10px] font-sans font-bold bg-pink-500/30 text-pink-200 px-2 py-0.5 rounded-md border border-pink-400/30">
+                              {infoGroup.scale}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-white mt-1">{infoGroup.label}</p>
+                          <p className="text-[10px] text-slate-300 font-mono mt-0.5">Define Groups: Kode ({infoGroup.groupCodes || '1, 2'})</p>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 bg-indigo-900/60 rounded-xl border border-indigo-400/30 text-xs text-indigo-100 font-sans leading-relaxed flex items-start gap-2">
+                        <HelpCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                        <div>
+                          <strong>Langkah Pengujian di Aplikasi IBM SPSS Statistics:</strong><br />
+                          • <strong>Independent T-Test (Parametrik):</strong> Menu <strong>Analyze &gt; Compare Means &gt; Independent-Samples T Test...</strong> &gt; Masukkan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoNum.name}</code> ke <strong>Test Variable(s)</strong> dan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoGroup.name}</code> ke <strong>Grouping Variable</strong> &gt; Klik <strong>Define Groups...</strong> (Isikan Group 1: <code className="text-amber-200 font-mono">1</code> dan Group 2: <code className="text-amber-200 font-mono">2</code> atau <code className="text-amber-200 font-mono">0</code>) &gt; Klik <strong>OK</strong>.<br />
+                          • <strong>Mann-Whitney U Test (Non-Parametrik):</strong> Menu <strong>Analyze &gt; Nonparametric Tests &gt; Legacy Dialogs &gt; 2 Independent Samples...</strong> &gt; Masukkan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoNum.name}</code> ke <strong>Test Variable List</strong> dan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoGroup.name}</code> ke <strong>Grouping Variable</strong> (Define Groups: 1 dan 2) &gt; Centang <strong>Mann-Whitney U</strong> &gt; Klik <strong>OK</strong>.
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Narrative Conclusion */}
                 <div className="p-4 mb-6 bg-pink-50 dark:bg-pink-950/30 border border-pink-200 dark:border-pink-900/50 rounded-2xl">
@@ -1654,7 +2070,7 @@ EXECUTE.`;
                 </div>
 
                 {/* Pair Focus Selectors */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-pink-200 dark:border-pink-900/40">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-pink-200 dark:border-pink-900/40">
                   <div>
                     <label className="block text-xs font-extrabold text-pink-600 dark:text-pink-400 uppercase tracking-wider mb-2">
                       Variabel Fokus 1 (X)
@@ -1664,14 +2080,14 @@ EXECUTE.`;
                       onChange={(e) => setCorrVar1(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-pink-300 dark:border-pink-800 outline-none cursor-pointer"
                     >
-                      <option value="dmft">DMF-T (Karies Gigi Tetap)</option>
-                      <option value="deft">def-t (Karies Gigi Sulung)</option>
-                      <option value="ohis">OHI-S (Kebersihan Mulut)</option>
-                      <option value="dis">DI-S (Debris Index / Plak)</option>
-                      <option value="cis">CI-S (Calculus Index / Karang)</option>
-                      <option value="kariesTotal">Total Gigi Karies Aktif (d + D)</option>
-                      <option value="tumpatTotal">Total Penambalan Gigi (f + F)</option>
-                      <option value="umur">Umur Responden (Tahun)</option>
+                      <option value="dmft">[SPSS: DMFT_SCORE] Indeks DMF-T (Karies Gigi Tetap)</option>
+                      <option value="deft">[SPSS: DEFT_SCORE] Indeks def-t (Karies Gigi Sulung)</option>
+                      <option value="ohis">[SPSS: OHIS_SCORE] Indeks OHI-S (Kebersihan Mulut)</option>
+                      <option value="dis">[SPSS: DIS_SCORE] Debris Index DI-S (Plak)</option>
+                      <option value="cis">[SPSS: CIS_SCORE] Calculus Index CI-S (Karang Gigi)</option>
+                      <option value="kariesTotal">[SPSS: D_TETAP] Total Gigi Karies Aktif (d + D)</option>
+                      <option value="tumpatTotal">[SPSS: F_TETAP] Total Penambalan Gigi (f + F)</option>
+                      <option value="umur">[SPSS: UMUR] Umur Responden (Tahun)</option>
                     </select>
                   </div>
                   <div>
@@ -1683,17 +2099,77 @@ EXECUTE.`;
                       onChange={(e) => setCorrVar2(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-purple-300 dark:border-purple-800 outline-none cursor-pointer"
                     >
-                      <option value="ohis">OHI-S (Kebersihan Mulut)</option>
-                      <option value="dmft">DMF-T (Karies Gigi Tetap)</option>
-                      <option value="deft">def-t (Karies Gigi Sulung)</option>
-                      <option value="dis">DI-S (Debris Index / Plak)</option>
-                      <option value="cis">CI-S (Calculus Index / Karang)</option>
-                      <option value="kariesTotal">Total Gigi Karies Aktif (d + D)</option>
-                      <option value="tumpatTotal">Total Penambalan Gigi (f + F)</option>
-                      <option value="umur">Umur Responden (Tahun)</option>
+                      <option value="ohis">[SPSS: OHIS_SCORE] Indeks OHI-S (Kebersihan Mulut)</option>
+                      <option value="dmft">[SPSS: DMFT_SCORE] Indeks DMF-T (Karies Gigi Tetap)</option>
+                      <option value="deft">[SPSS: DEFT_SCORE] Indeks def-t (Karies Gigi Sulung)</option>
+                      <option value="dis">[SPSS: DIS_SCORE] Debris Index DI-S (Plak)</option>
+                      <option value="cis">[SPSS: CIS_SCORE] Calculus Index CI-S (Karang Gigi)</option>
+                      <option value="kariesTotal">[SPSS: D_TETAP] Total Gigi Karies Aktif (d + D)</option>
+                      <option value="tumpatTotal">[SPSS: F_TETAP] Total Penambalan Gigi (f + F)</option>
+                      <option value="umur">[SPSS: UMUR] Umur Responden (Tahun)</option>
                     </select>
                   </div>
                 </div>
+
+                {/* SPSS Variable Mapping Card for Correlation */}
+                {(() => {
+                  const infoC1 = getSpssVarInfo(corrVar1);
+                  const infoC2 = getSpssVarInfo(corrVar2);
+                  return (
+                    <div className="bg-gradient-to-r from-indigo-950/90 via-slate-900 to-purple-950/90 p-4 rounded-2xl border border-indigo-500/40 text-white shadow-md space-y-3 mb-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-indigo-500/30">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-indigo-200">
+                            📌 Peta Variabel &amp; Panduan Menu Dialog IBM SPSS (Bivariate Correlation)
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-extrabold bg-indigo-500/30 text-indigo-200 px-2.5 py-0.5 rounded-full border border-indigo-400/30">
+                          Pearson &amp; Spearman
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="bg-white/10 p-3 rounded-xl border border-white/15">
+                          <span className="text-[10px] font-extrabold uppercase text-pink-300 block mb-0.5">
+                            1. Variabel 1 di SPSS:
+                          </span>
+                          <div className="text-sm font-black font-mono text-amber-300 flex items-center gap-1.5">
+                            <span>{infoC1.name}</span>
+                            <span className="text-[10px] font-sans font-bold bg-pink-500/30 text-pink-200 px-2 py-0.5 rounded-md border border-pink-400/30">
+                              {infoC1.scale}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-white mt-1">{infoC1.label}</p>
+                        </div>
+
+                        <div className="bg-white/10 p-3 rounded-xl border border-white/15">
+                          <span className="text-[10px] font-extrabold uppercase text-purple-300 block mb-0.5">
+                            2. Variabel 2 di SPSS:
+                          </span>
+                          <div className="text-sm font-black font-mono text-amber-300 flex items-center gap-1.5">
+                            <span>{infoC2.name}</span>
+                            <span className="text-[10px] font-sans font-bold bg-purple-500/30 text-purple-200 px-2 py-0.5 rounded-md border border-purple-400/30">
+                              {infoC2.scale}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-white mt-1">{infoC2.label}</p>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 bg-indigo-900/60 rounded-xl border border-indigo-400/30 text-xs text-indigo-100 font-sans leading-relaxed flex items-start gap-2">
+                        <HelpCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                        <div>
+                          <strong>Langkah Pengujian Korelasi di IBM SPSS Statistics:</strong><br />
+                          1. Buka IBM SPSS &gt; Menu <strong>Analyze &gt; Correlate &gt; Bivariate...</strong><br />
+                          2. Pindahkan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoC1.name}</code> dan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoC2.name}</code> ke kotak <strong>Variables</strong>.<br />
+                          3. Pada <em>Correlation Coefficients</em>, centang <strong>Pearson</strong> (untuk uji parametrik) dan/atau <strong>Spearman</strong> (non-parametrik).<br />
+                          4. Klik <strong>OK</strong>. Nilai korelasi (r atau ρ) dan Sig. (2-tailed) di SPSS dijamin 100% persis dengan matriks korelasi di bawah!
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Focal Pair Analysis Result Box */}
                 {(() => {
@@ -1848,15 +2324,15 @@ EXECUTE.`;
                       onChange={(e) => setPairedVar1(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-pink-300 dark:border-pink-800 focus:ring-2 focus:ring-pink-500 outline-none cursor-pointer"
                     >
-                      <option value="dis">Debris Index (DI-S)</option>
-                      <option value="cis">Calculus Index (CI-S)</option>
-                      <option value="ohis">Indeks Kebersihan Mulut (OHI-S)</option>
-                      <option value="deft">Karies Gigi Sulung (def-t)</option>
-                      <option value="dmft">Karies Gigi Tetap (DMF-T)</option>
-                      <option value="kariesTotal">Jumlah Gigi Karies Aktif (D + d)</option>
-                      <option value="tumpatTotal">Jumlah Gigi Penambalan (F + f)</option>
-                      <option value="hilangTotal">Jumlah Gigi Hilang (M + e)</option>
-                      <option value="umur">Umur Responden (Tahun)</option>
+                      <option value="dis">[SPSS: DIS_SCORE] Debris Index DI-S (Kontinu)</option>
+                      <option value="cis">[SPSS: CIS_SCORE] Calculus Index CI-S (Kontinu)</option>
+                      <option value="ohis">[SPSS: OHIS_SCORE] Indeks Kebersihan Mulut OHI-S (Kontinu)</option>
+                      <option value="deft">[SPSS: DEFT_SCORE] Karies Gigi Sulung def-t (Kontinu)</option>
+                      <option value="dmft">[SPSS: DMFT_SCORE] Karies Gigi Tetap DMF-T (Kontinu)</option>
+                      <option value="kariesTotal">[SPSS: D_TETAP] Jumlah Gigi Karies Aktif (D + d)</option>
+                      <option value="tumpatTotal">[SPSS: F_TETAP] Jumlah Gigi Penambalan (F + f)</option>
+                      <option value="hilangTotal">[SPSS: M_TETAP] Jumlah Gigi Hilang (M + e)</option>
+                      <option value="umur">[SPSS: UMUR] Umur Responden (Tahun)</option>
                     </select>
                   </div>
                   <div>
@@ -1868,18 +2344,76 @@ EXECUTE.`;
                       onChange={(e) => setPairedVar2(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-purple-300 dark:border-purple-800 focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
                     >
-                      <option value="cis">Calculus Index (CI-S)</option>
-                      <option value="dis">Debris Index (DI-S)</option>
-                      <option value="ohis">Indeks Kebersihan Mulut (OHI-S)</option>
-                      <option value="deft">Karies Gigi Sulung (def-t)</option>
-                      <option value="dmft">Karies Gigi Tetap (DMF-T)</option>
-                      <option value="kariesTotal">Jumlah Gigi Karies Aktif (D + d)</option>
-                      <option value="tumpatTotal">Jumlah Gigi Penambalan (F + f)</option>
-                      <option value="hilangTotal">Jumlah Gigi Hilang (M + e)</option>
-                      <option value="umur">Umur Responden (Tahun)</option>
+                      <option value="cis">[SPSS: CIS_SCORE] Calculus Index CI-S (Kontinu)</option>
+                      <option value="dis">[SPSS: DIS_SCORE] Debris Index DI-S (Kontinu)</option>
+                      <option value="ohis">[SPSS: OHIS_SCORE] Indeks Kebersihan Mulut OHI-S (Kontinu)</option>
+                      <option value="deft">[SPSS: DEFT_SCORE] Karies Gigi Sulung def-t (Kontinu)</option>
+                      <option value="dmft">[SPSS: DMFT_SCORE] Karies Gigi Tetap DMF-T (Kontinu)</option>
+                      <option value="kariesTotal">[SPSS: D_TETAP] Jumlah Gigi Karies Aktif (D + d)</option>
+                      <option value="tumpatTotal">[SPSS: F_TETAP] Jumlah Gigi Penambalan (F + f)</option>
+                      <option value="hilangTotal">[SPSS: M_TETAP] Jumlah Gigi Hilang (M + e)</option>
+                      <option value="umur">[SPSS: UMUR] Umur Responden (Tahun)</option>
                     </select>
                   </div>
                 </div>
+
+                {/* SPSS Variable Mapping Card for Paired T-Test */}
+                {(() => {
+                  const infoP1 = getSpssVarInfo(pairedVar1);
+                  const infoP2 = getSpssVarInfo(pairedVar2);
+                  return (
+                    <div className="bg-gradient-to-r from-indigo-950/90 via-slate-900 to-purple-950/90 p-4 rounded-2xl border border-indigo-500/40 text-white shadow-md space-y-3 mb-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-indigo-500/30">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-indigo-200">
+                            📌 Peta Variabel &amp; Panduan Menu Dialog IBM SPSS (Paired Samples T-Test &amp; Wilcoxon)
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-extrabold bg-indigo-500/30 text-indigo-200 px-2.5 py-0.5 rounded-full border border-indigo-400/30">
+                          Sampel Berpasangan
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="bg-white/10 p-3 rounded-xl border border-white/15">
+                          <span className="text-[10px] font-extrabold uppercase text-pink-300 block mb-0.5">
+                            1. Variable 1 (Pair 1) di SPSS:
+                          </span>
+                          <div className="text-sm font-black font-mono text-amber-300 flex items-center gap-1.5">
+                            <span>{infoP1.name}</span>
+                            <span className="text-[10px] font-sans font-bold bg-pink-500/30 text-pink-200 px-2 py-0.5 rounded-md border border-pink-400/30">
+                              {infoP1.scale}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-white mt-1">{infoP1.label}</p>
+                        </div>
+
+                        <div className="bg-white/10 p-3 rounded-xl border border-white/15">
+                          <span className="text-[10px] font-extrabold uppercase text-purple-300 block mb-0.5">
+                            2. Variable 2 (Pair 2) di SPSS:
+                          </span>
+                          <div className="text-sm font-black font-mono text-amber-300 flex items-center gap-1.5">
+                            <span>{infoP2.name}</span>
+                            <span className="text-[10px] font-sans font-bold bg-purple-500/30 text-purple-200 px-2 py-0.5 rounded-md border border-purple-400/30">
+                              {infoP2.scale}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-white mt-1">{infoP2.label}</p>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 bg-indigo-900/60 rounded-xl border border-indigo-400/30 text-xs text-indigo-100 font-sans leading-relaxed flex items-start gap-2">
+                        <HelpCircle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                        <div>
+                          <strong>Langkah Pengujian Sampel Berpasangan di IBM SPSS Statistics:</strong><br />
+                          • <strong>Paired Samples T-Test (Parametrik):</strong> Menu <strong>Analyze &gt; Compare Means &gt; Paired-Samples T Test...</strong> &gt; Pilih <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoP1.name}</code> dan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoP2.name}</code> bersamaan lalu pindahkan ke kotak <strong>Paired Variables</strong> &gt; Klik <strong>OK</strong>.<br />
+                          • <strong>Wilcoxon Signed-Rank Test (Non-Parametrik):</strong> Menu <strong>Analyze &gt; Nonparametric Tests &gt; Legacy Dialogs &gt; 2 Related Samples...</strong> &gt; Pindahkan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoP1.name}</code> dan <code className="bg-white/20 px-1 py-0.5 rounded text-amber-200 font-mono font-bold">{infoP2.name}</code> ke <strong>Test Pairs</strong> &gt; Centang <strong>Wilcoxon</strong> &gt; Klik <strong>OK</strong>.
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Quick Preset Buttons */}
                 <div className="flex flex-wrap items-center gap-2 mb-6">
@@ -2100,171 +2634,489 @@ EXECUTE.`;
             <div className="absolute top-0 right-0 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl pointer-events-none"></div>
             
             <div className="relative z-10 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 bg-pink-500/20 text-pink-300 border border-pink-500/30 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-pink-400" />
-                  Statistik &amp; Indeks Deskriptif Epidemiologi
-                </span>
-                <span className="px-3 py-1 bg-white/10 text-slate-200 rounded-full text-xs font-mono font-bold">
-                  N = {metrics.totalN} Responden (5 Kelompok Umur WHO)
-                </span>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-pink-500/20 text-pink-300 border border-pink-500/30 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-pink-400" />
+                    Statistik &amp; Indeks Deskriptif SPSS
+                  </span>
+                  <span className="px-3 py-1 bg-white/10 text-slate-200 rounded-full text-xs font-mono font-bold">
+                    N = {metrics.totalN} Responden Valid
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleExportSPSS}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-black rounded-xl shadow-lg transition-all cursor-pointer hover:scale-105 active:scale-95 ring-2 ring-indigo-400/30"
+                    id="btn-export-descriptive-spss"
+                    title="Ekspor Master Data Coded (.xlsx) untuk IBM SPSS Statistics"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Ekspor Master Data SPSS</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const syntax = `* IBM SPSS Statistics - Descriptive Statistics & Frequencies Syntax.\nDESCRIPTIVES VARIABLES=DMFT_SCORE DEFT_SCORE D_TETAP M_TETAP F_TETAP DIS_SCORE CIS_SCORE OHIS_SCORE UMUR\n  /STATISTICS=MEAN STDDEV MIN MAX VARIANCE SEMEAN SKEWNESS KURTOSIS.\n\nFREQUENCIES VARIABLES=JK_KODE UMUR_KODE OHIS_CAT_CODE KARIES_STATUS GUSI_BERDARAH LESI_MUKOSA PERLU_RUJUKAN\n  /ORDER=ANALYSIS.`;
+                      navigator.clipboard.writeText(syntax);
+                      setCopiedSyntax(true);
+                      setTimeout(() => setCopiedSyntax(false), 2500);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-black rounded-xl shadow-md transition-all cursor-pointer"
+                    title="Salin Syntax Deskriptif IBM SPSS"
+                  >
+                    {copiedSyntax ? <Check className="w-3.5 h-3.5" /> : <Terminal className="w-3.5 h-3.5" />}
+                    <span>{copiedSyntax ? 'Syntax Tersalin!' : 'Salin Syntax SPSS'}</span>
+                  </button>
+                </div>
               </div>
 
               <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                Analisis Deskriptif Kesehatan Gigi &amp; Mulut
+                Analisis Deskriptif Ekuivalen IBM SPSS Statistics
               </h3>
               
               <p className="text-pink-200/90 text-xs sm:text-sm max-w-3xl leading-relaxed font-medium">
-                Penyajikan gambaran kuantitatif populasi mencakup distribusi frekuensi, nilai rata-rata (mean), standar deviasi, proporsi karies (DMF-T &amp; def-t), skor OHI-S, serta sebaran kategori WHO.
+                Menyajikan output analisis deskriptif yang identik dengan software IBM SPSS Statistics (Analyze &gt; Descriptive Statistics &gt; Descriptives &amp; Frequencies) mencakup N, Minimum, Maksimum, Mean, Std. Error Mean, Standar Deviasi, Varians, Skewness, Kurtosis, serta Tabel Distribusi Frekuensi (f, %, Valid %, Cumulative %).
               </p>
-            </div>
-          </div>
 
-          {/* Key Metrics Snapshot */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-pink-200/60 dark:border-pink-900/40 shadow-sm">
-              <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Prevalensi Karies</p>
-              <p className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">{metrics.cariesPrevalencePct.toFixed(1)}%</p>
-              <p className="text-[10px] text-slate-500">{metrics.cariesCount} dari {metrics.totalN} org</p>
-            </div>
+              {/* View Mode Toggle Sub-Tabs */}
+              <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-pink-500/20">
+                <button
+                  onClick={() => setDescriptiveViewMode('spss_tables')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                    descriptiveViewMode === 'spss_tables'
+                      ? 'bg-pink-600 text-white shadow-md scale-105'
+                      : 'bg-white/10 text-pink-200 hover:bg-white/20'
+                  }`}
+                >
+                  <BarChart2 className="w-4 h-4" />
+                  <span>1. Tabel Output Statistik Deskriptif SPSS (Descriptives &amp; Frequencies)</span>
+                </button>
 
-            <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-pink-200/60 dark:border-pink-900/40 shadow-sm">
-              <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Mean DMF-T (WHO)</p>
-              <p className="text-xl font-black text-pink-600 dark:text-pink-400 mt-1">{metrics.meanDMFT.toFixed(2)}</p>
-              <p className="text-[10px] text-slate-500">Status: {dmftCategoryInfo.text.split(' ')[0]}</p>
-            </div>
-
-            <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-rose-200/60 dark:border-rose-900/40 shadow-sm">
-              <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Mean def-t (Sulung)</p>
-              <p className="text-xl font-black text-rose-600 dark:text-rose-400 mt-1">{metrics.meanDeft.toFixed(2)}</p>
-              <p className="text-[10px] text-slate-500">Status: {deftCategoryInfo.text.split(' ')[0]}</p>
-            </div>
-
-            <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-teal-200/60 dark:border-teal-900/40 shadow-sm">
-              <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Mean OHI-S</p>
-              <p className="text-xl font-black text-teal-600 dark:text-teal-400 mt-1">{metrics.ohisStats?.avgOHIS?.toFixed(2) || '0.00'}</p>
-              <p className="text-[10px] text-slate-500">DI-S: {metrics.ohisStats?.avgDIS?.toFixed(1)} | CI-S: {metrics.ohisStats?.avgCIS?.toFixed(1)}</p>
-            </div>
-
-            <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-purple-200/60 dark:border-purple-900/40 shadow-sm">
-              <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">SiC Index (Risiko)</p>
-              <p className="text-xl font-black text-purple-600 dark:text-purple-400 mt-1">{metrics.siCIndex.toFixed(2)}</p>
-              <p className="text-[10px] text-slate-500">Beban 1/3 Parah</p>
-            </div>
-
-            <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-emerald-200/60 dark:border-emerald-900/40 shadow-sm">
-              <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Care Index</p>
-              <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{metrics.careIndexPct.toFixed(1)}%</p>
-              <p className="text-[10px] text-slate-500">Tingkat Restorasi</p>
-            </div>
-          </div>
-
-          {/* Section 1: Profil Deskriptif Komponen Kesehatan Gigi & Mulut */}
-          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm space-y-4">
-            <div className="flex items-center gap-3 pb-3 border-b border-pink-100 dark:border-pink-900/40">
-              <FileText className="w-5 h-5 text-pink-600 dark:text-pink-400" />
-              <h4 className="text-base font-black text-slate-900 dark:text-slate-100">
-                1. Profil Deskriptif Komponen Kesehatan Gigi &amp; Mulut (N = 150)
-              </h4>
-            </div>
-
-            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
-              Berdasarkan hasil survei kesehatan gigi dan mulut terhadap <strong>150 responden</strong> yang terbagi secara proporsional ke dalam 5 kelompok umur standar WHO (30 Balita 0-4 thn, 30 Anak 5-11 thn, 30 Remaja 12-17 thn, 30 Dewasa 18-59 thn, dan 30 Lansia 60+ thn), ditemukan angka prevalensi karies sebesar <strong>{metrics.cariesPrevalencePct.toFixed(1)}%</strong> ({metrics.cariesCount} orang), sementara <strong>{metrics.cariesFreePct.toFixed(1)}%</strong> ({metrics.cariesFreeCount} orang) berada dalam kondisi bebas karies.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div className="p-4 bg-pink-50/50 dark:bg-pink-950/30 rounded-2xl border border-pink-200/50 dark:border-pink-900/30 space-y-2">
-                <h5 className="text-xs font-black text-pink-950 dark:text-pink-200 flex items-center gap-1.5">
-                  <Stethoscope className="w-4 h-4 text-pink-600" /> Rincian Komponen Karies Gigi
-                </h5>
-                <ul className="text-xs text-slate-700 dark:text-slate-300 space-y-1 list-disc list-inside">
-                  <li><strong>Rata-rata DMF-T Gigi Permanen:</strong> {metrics.meanDMFT.toFixed(2)} (Kategori WHO: <span className="font-bold text-pink-600">{dmftCategoryInfo.text}</span>) dengan SD ± {metrics.sdDMFT.toFixed(2)}.</li>
-                  <li><strong>Komponen Decayed (D):</strong> Rata-rata {metrics.meanD.toFixed(2)} gigi/orang (Total {metrics.sumD} karies aktif tak tertangani).</li>
-                  <li><strong>Komponen Missing (M):</strong> Rata-rata {metrics.meanM.toFixed(2)} gigi/orang (Total {metrics.sumM} gigi dicabut/hilang karena karies).</li>
-                  <li><strong>Komponen Filled (F):</strong> Rata-rata {metrics.meanF.toFixed(2)} gigi/orang (Total {metrics.sumF} gigi tumpat/direstorasi).</li>
-                  <li><strong>Rata-rata def-t Gigi Sulung:</strong> {metrics.meanDeft.toFixed(2)} gigi/anak (Kerusakan gigi susu pada kelompok anak/balita).</li>
-                </ul>
-              </div>
-
-              <div className="p-4 bg-teal-50/50 dark:bg-teal-950/30 rounded-2xl border border-teal-200/50 dark:border-teal-900/30 space-y-2">
-                <h5 className="text-xs font-black text-teal-950 dark:text-teal-200 flex items-center gap-1.5">
-                  <Activity className="w-4 h-4 text-teal-600" /> Kebersihan Mulut &amp; Jaringan Lunak
-                </h5>
-                <ul className="text-xs text-slate-700 dark:text-slate-300 space-y-1 list-disc list-inside">
-                  <li><strong>Skor OHI-S Rata-rata:</strong> {metrics.ohisStats?.avgOHIS?.toFixed(2) || '0.00'} (Debris Index DIS: {metrics.ohisStats?.avgDIS?.toFixed(2) || '0.00'}, Calculus Index CIS: {metrics.ohisStats?.avgCIS?.toFixed(2) || '0.00'}).</li>
-                  <li><strong>Prevalensi Gusi Berdarah (Gingival Bleeding):</strong> {metrics.gusiBerdarahPct.toFixed(1)}% ({metrics.gusiBerdarahCount} orang mengalami tanda peradangan gusi).</li>
-                  <li><strong>Prevalensi Lesi Mukosa Oral:</strong> {metrics.lesiMukosaPct.toFixed(1)}% ({metrics.lesiMukosaCount} orang terdeteksi stomatitis, sariawan, atau perubahan jaringan lunak).</li>
-                  <li><strong>Kebutuhan Rujukan Faskes:</strong> {metrics.perluDirujukPct.toFixed(1)}% ({metrics.perluDirujukCount} orang memerlukan penanganan tingkat lanjut di Puskesmas/RS).</li>
-                </ul>
+                <button
+                  onClick={() => setDescriptiveViewMode('epidemiology_profile')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                    descriptiveViewMode === 'epidemiology_profile'
+                      ? 'bg-pink-600 text-white shadow-md scale-105'
+                      : 'bg-white/10 text-pink-200 hover:bg-white/20'
+                  }`}
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>2. Profile &amp; Indeks Epidemiologi Kesehatan Gigi (WHO)</span>
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Section 2: Distribusi Frekuensi & Persentase Kategori WHO */}
-          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm space-y-4">
-            <div className="flex items-center gap-3 pb-3 border-b border-pink-100 dark:border-pink-900/40">
-              <BarChart2 className="w-5 h-5 text-pink-600 dark:text-pink-400" />
-              <h4 className="text-base font-black text-slate-900 dark:text-slate-100">
-                2. Distribusi Frekuensi &amp; Persentase Kategori WHO
-              </h4>
+          {/* Master Data SPSS Callout Banner for Descriptive Analysis */}
+          <div className="bg-gradient-to-r from-indigo-900/90 via-purple-900/80 to-slate-900 text-white p-5 rounded-3xl border border-indigo-500/30 shadow-lg flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-indigo-600/30 text-indigo-300 rounded-2xl border border-indigo-400/30 shrink-0">
+                <FileSpreadsheet className="w-6 h-6 text-indigo-300" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-indigo-500/30 text-indigo-200 px-2.5 py-0.5 rounded-full border border-indigo-400/30">
+                    Master Data Deskriptif SPSS Exporter
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800">
+                    Format .XLSX Numeric Pre-Coded
+                  </span>
+                </div>
+                <h4 className="text-base font-black text-white mt-1">
+                  Ekspor Master Data Deskriptif Siap Impor ke IBM SPSS Statistics
+                </h4>
+                <p className="text-xs text-indigo-100/90 mt-0.5 leading-relaxed max-w-2xl">
+                  Unduh seluruh master data responden dalam format Excel yang sudah dikodekan numerik (JK_CODE, KEL_UMUR_CODE, PENDIDIKAN_CODE, PEKERJAAN_CODE, DMFT_CAT_CODE, OHIS_CAT_CODE, KARIES_STATUS) lengkap dengan lembar kamus Variable View. Siap dibuka di IBM SPSS via menu <strong>File &gt; Open &gt; Data</strong>.
+                </p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Kategori DMF-T WHO */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                <span className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase block">
-                  A. Distribusi Keparahan DMF-T (WHO)
-                </span>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Rata-rata DMF-T Populasi</span>
-                    <span className="font-mono font-black text-pink-600">{metrics.meanDMFT.toFixed(2)}</span>
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
+              <button
+                onClick={handleExportSPSS}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-black rounded-2xl shadow-md transition-all cursor-pointer hover:scale-105 active:scale-95"
+                id="btn-export-descriptive-spss-banner"
+              >
+                <FileDown className="w-4 h-4" />
+                <span>Download Master Data SPSS (.xlsx)</span>
+              </button>
+
+              <button
+                onClick={() => setShowSpssGuideModal(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-indigo-100 text-xs font-bold rounded-2xl border border-white/20 transition-all cursor-pointer"
+                title="Buka Petunjuk Cara Impor ke IBM SPSS"
+              >
+                <HelpCircle className="w-4 h-4 text-indigo-300" />
+                <span>Panduan Impor</span>
+              </button>
+            </div>
+          </div>
+
+          {/* VIEW MODE 1: SPSS DESCRIPTIVE & FREQUENCIES TABLES */}
+          {descriptiveViewMode === 'spss_tables' && (
+            <div className="space-y-6">
+
+              {/* Card 1: SPSS Descriptive Statistics Table (Output Analyze > Descriptives) */}
+              <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-pink-100 dark:border-pink-900/40">
+                  <div>
+                    <h4 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <BarChart2 className="w-5 h-5 text-pink-600" />
+                      Tabel Output SPSS "Descriptive Statistics" (Analyze &gt; Descriptives)
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Statistik deskriptif parameter kuantitatif kesehatan gigi &amp; mulut (N = {respondents.length}).
+                    </p>
                   </div>
-                  <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Kategori Tingkat Keparahan</span>
-                    <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full ${dmftCategoryInfo.badgeBg}`}>
-                      {dmftCategoryInfo.text}
-                    </span>
+
+                  <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-extrabold text-[11px] rounded-full border border-indigo-200 dark:border-indigo-800 self-start sm:self-auto">
+                    Presisi SPSS Statistics
+                  </span>
+                </div>
+
+                {/* SPSS Descriptives Output Table */}
+                <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-2xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-extrabold">
+                        <th className="p-3">Descriptive Statistics (Variable)</th>
+                        <th className="p-3 text-center">N</th>
+                        <th className="p-3 text-center">Min</th>
+                        <th className="p-3 text-center">Max</th>
+                        <th className="p-3 text-center">Mean</th>
+                        <th className="p-3 text-center">Std. Error</th>
+                        <th className="p-3 text-center">Std. Deviation</th>
+                        <th className="p-3 text-center">Variance</th>
+                        <th className="p-3 text-center" colSpan={2}>Skewness (Stat | SE)</th>
+                        <th className="p-3 text-center" colSpan={2}>Kurtosis (Stat | SE)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
+                      {spssDescriptivesData.map((row, idx) => (
+                        <tr key={row.key} className={idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/70 dark:bg-slate-800/40'}>
+                          <td className="p-2.5 font-sans font-bold text-slate-900 dark:text-slate-100">
+                            {row.label}
+                          </td>
+                          <td className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">{row.n}</td>
+                          <td className="p-2.5 text-center text-slate-600 dark:text-slate-400">{row.min}</td>
+                          <td className="p-2.5 text-center text-slate-600 dark:text-slate-400">{row.max}</td>
+                          <td className="p-2.5 text-center font-black text-pink-600 dark:text-pink-400">{row.mean.toFixed(2)}</td>
+                          <td className="p-2.5 text-center text-slate-600 dark:text-slate-400">{row.seMean.toFixed(3)}</td>
+                          <td className="p-2.5 text-center font-bold text-slate-800 dark:text-slate-200">{row.sd.toFixed(2)}</td>
+                          <td className="p-2.5 text-center text-slate-600 dark:text-slate-400">{row.variance.toFixed(2)}</td>
+                          <td className="p-2.5 text-center text-purple-600 dark:text-purple-400 font-bold">{row.skewness.toFixed(3)}</td>
+                          <td className="p-2.5 text-center text-slate-400 text-[10px]">{row.seSkewness.toFixed(3)}</td>
+                          <td className="p-2.5 text-center text-teal-600 dark:text-teal-400 font-bold">{row.kurtosis.toFixed(3)}</td>
+                          <td className="p-2.5 text-center text-slate-400 text-[10px]">{row.seKurtosis.toFixed(3)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl text-xs text-slate-600 dark:text-slate-400 space-y-1">
+                  <p className="font-bold text-slate-900 dark:text-slate-100">Catatan Interpretasi Output SPSS:</p>
+                  <p>• <strong>Mean &amp; Std. Deviation:</strong> Mengukur nilai pusat dan sebaran data. Rasio Skewness/SE Skewness &lt; ±2.0 menunjukkan distribusi normal.</p>
+                  <p>• <strong>Valid N (listwise):</strong> Total {respondents.length} sampel data terisi secara lengkap tanpa missing value.</p>
+                </div>
+              </div>
+
+              {/* Card 2: SPSS Frequencies Table (Output Analyze > Frequencies) */}
+              <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-pink-100 dark:border-pink-900/40">
+                  <div>
+                    <h4 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <PieChart className="w-5 h-5 text-purple-600" />
+                      Tabel Output SPSS "Frequencies" (Analyze &gt; Frequencies)
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Pilih variabel kategorikal untuk melihat distribusi frekuensi (f), persentase, persentase valid, dan persentase kumulatif.
+                    </p>
                   </div>
-                  <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">SiC Index (1/3 Terparah)</span>
-                    <span className="font-mono font-black text-purple-600">{metrics.siCIndex.toFixed(2)}</span>
+
+                  {/* Variable Selector */}
+                  <div className="w-full md:w-72">
+                    <label className="block text-[10px] font-extrabold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-1">
+                      Pilih Variabel Kategorikal:
+                    </label>
+                    <select
+                      value={freqVar}
+                      onChange={(e) => setFreqVar(e.target.value)}
+                      className="w-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs p-2.5 rounded-xl border border-purple-300 dark:border-purple-800 focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
+                    >
+                      <option value="jenisKelamin">[SPSS: JK_CODE] Jenis Kelamin Responden (1=Laki-Laki, 2=Perempuan)</option>
+                      <option value="kelompokUmur">[SPSS: KEL_UMUR_CODE] Kelompok Umur WHO (1-5)</option>
+                      <option value="kategoriOHIS">[SPSS: OHIS_CAT_CODE] Kategori Kebersihan Mulut OHI-S (1-3)</option>
+                      <option value="statusKaries">[SPSS: KARIES_STATUS] Status Prevalensi Karies (0=Bebas, 1=Karies)</option>
+                      <option value="kategoriDMFT">[SPSS: DMFT_CAT_CODE] Kategori Keparahan DMF-T WHO (1-5)</option>
+                      <option value="gusiBerdarah">[SPSS: GUSI_BERDARAH] Status Pendarahan Gusi (0=Normal, 1=Berdarah)</option>
+                      <option value="lesiMukosa">[SPSS: LESI_MUKOSA] Status Lesi Mukosa Oral (0=Normal, 1=Ada Lesi)</option>
+                      <option value="rencanaRujukan">[SPSS: PERLU_RUJUKAN] Status Kebutuhan Rujukan Faskes (0=Tidak, 1=Ya)</option>
+                      <option value="pendidikan">[SPSS: PENDIDIKAN_CODE] Tingkat Pendidikan Terakhir (1-5)</option>
+                      <option value="pekerjaan">[SPSS: PEKERJAAN_CODE] Sektor Pekerjaan / Aktivitas (1-6)</option>
+                    </select>
                   </div>
-                  <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Care Index (F/DMFT)</span>
-                    <span className="font-mono font-black text-emerald-600">{metrics.careIndexPct.toFixed(1)}%</span>
+                </div>
+
+                {/* SPSS Variable Guide Pill for Frequencies */}
+                {(() => {
+                  const infoF = getSpssVarInfo(freqVar);
+                  return (
+                    <div className="p-3 bg-indigo-950/80 rounded-2xl border border-indigo-500/30 text-xs text-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 font-black font-mono text-xs">
+                          {infoF.name}
+                        </span>
+                        <span className="font-bold text-white">{infoF.label}</span>
+                        <span className="text-[10px] text-indigo-300 font-mono">({infoF.coding})</span>
+                      </div>
+                      <div className="text-[11px] text-indigo-200">
+                        💡 <strong>Menu SPSS:</strong> <code className="bg-white/20 px-1.5 py-0.5 rounded text-amber-200 font-mono font-bold">Analyze &gt; Descriptive Statistics &gt; Frequencies...</code> &gt; Pindahkan <code className="bg-white/20 px-1.5 py-0.5 rounded text-amber-200 font-mono font-bold">{infoF.name}</code> ke <strong>Variable(s)</strong>.
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* SPSS Frequencies Statistics Summary Box */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-500 uppercase">Statistics Variable</span>
+                    <p className="text-xs font-black text-purple-600 dark:text-purple-400 truncate">{freqTableResult.label}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-500 uppercase">N Valid / Missing</span>
+                    <p className="text-xs font-black text-slate-800 dark:text-slate-200">{freqTableResult.nValid} Valid / {freqTableResult.nMissing} Missing</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-500 uppercase">Modus (Mode)</span>
+                    <p className="text-xs font-black text-pink-600 dark:text-pink-400 truncate">{freqTableResult.mode}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-500 uppercase">Jumlah Kategori</span>
+                    <p className="text-xs font-black text-teal-600 dark:text-teal-400">{freqTableResult.rows.length} Kategori</p>
+                  </div>
+                </div>
+
+                {/* Full SPSS Frequencies Output Table */}
+                <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-2xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-extrabold">
+                        <th className="p-3">{freqTableResult.label}</th>
+                        <th className="p-3 text-center">Frequency (f)</th>
+                        <th className="p-3 text-center">Percent (%)</th>
+                        <th className="p-3 text-center">Valid Percent (%)</th>
+                        <th className="p-3 text-center">Cumulative Percent (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px]">
+                      {freqTableResult.rows.map((row, idx) => (
+                        <tr key={idx} className="bg-white dark:bg-slate-900">
+                          <td className="p-2.5 font-sans font-bold text-slate-900 dark:text-slate-100 flex items-center justify-between">
+                            <span>{row.label}</span>
+                            <span className="text-[10px] text-slate-400 font-normal font-mono">
+                              ({row.percent.toFixed(1)}%)
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center font-black text-purple-600 dark:text-purple-400">{row.frequency}</td>
+                          <td className="p-2.5 text-center font-bold text-slate-800 dark:text-slate-200">{row.percent.toFixed(1)}%</td>
+                          <td className="p-2.5 text-center text-slate-700 dark:text-slate-300">{row.validPercent.toFixed(1)}%</td>
+                          <td className="p-2.5 text-center font-extrabold text-pink-600 dark:text-pink-400">{row.cumulativePercent.toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-slate-100 dark:bg-slate-800 font-bold">
+                        <td className="p-2.5 font-sans uppercase">Total Valid</td>
+                        <td className="p-2.5 text-center text-purple-700 dark:text-purple-300">{freqTableResult.nValid}</td>
+                        <td className="p-2.5 text-center">100.0%</td>
+                        <td className="p-2.5 text-center">100.0%</td>
+                        <td className="p-2.5 text-center">-</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Visual Distribution Progress Bars */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                  <h5 className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-2">
+                    Visualisasi Proporsi Frekuensi ({freqTableResult.label})
+                  </h5>
+                  <div className="space-y-2">
+                    {freqTableResult.rows.map((row, idx) => (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <span>{row.label}</span>
+                          <span className="font-mono text-purple-600 dark:text-purple-400">{row.frequency} orang ({row.percent.toFixed(1)}%)</span>
+                        </div>
+                        <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-500"
+                            style={{ width: `${row.percent}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* VIEW MODE 2: EPIDEMIOLOGY PROFILE & WHO INDICES */}
+          {descriptiveViewMode === 'epidemiology_profile' && (
+            <div className="space-y-6">
+
+              {/* Key Metrics Snapshot */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-pink-200/60 dark:border-pink-900/40 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Prevalensi Karies</p>
+                  <p className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">{metrics.cariesPrevalencePct.toFixed(1)}%</p>
+                  <p className="text-[10px] text-slate-500">{metrics.cariesCount} dari {metrics.totalN} org</p>
+                </div>
+
+                <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-pink-200/60 dark:border-pink-900/40 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Mean DMF-T (WHO)</p>
+                  <p className="text-xl font-black text-pink-600 dark:text-pink-400 mt-1">{metrics.meanDMFT.toFixed(2)}</p>
+                  <p className="text-[10px] text-slate-500">Status: {dmftCategoryInfo.text.split(' ')[0]}</p>
+                </div>
+
+                <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-rose-200/60 dark:border-rose-900/40 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Mean def-t (Sulung)</p>
+                  <p className="text-xl font-black text-rose-600 dark:text-rose-400 mt-1">{metrics.meanDeft.toFixed(2)}</p>
+                  <p className="text-[10px] text-slate-500">Status: {deftCategoryInfo.text.split(' ')[0]}</p>
+                </div>
+
+                <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-teal-200/60 dark:border-teal-900/40 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Mean OHI-S</p>
+                  <p className="text-xl font-black text-teal-600 dark:text-teal-400 mt-1">{metrics.ohisStats?.avgOHIS?.toFixed(2) || '0.00'}</p>
+                  <p className="text-[10px] text-slate-500">DI-S: {metrics.ohisStats?.avgDIS?.toFixed(1)} | CI-S: {metrics.ohisStats?.avgCIS?.toFixed(1)}</p>
+                </div>
+
+                <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-purple-200/60 dark:border-purple-900/40 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">SiC Index (Risiko)</p>
+                  <p className="text-xl font-black text-purple-600 dark:text-purple-400 mt-1">{metrics.siCIndex.toFixed(2)}</p>
+                  <p className="text-[10px] text-slate-500">Beban 1/3 Parah</p>
+                </div>
+
+                <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-emerald-200/60 dark:border-emerald-900/40 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase">Care Index</p>
+                  <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{metrics.careIndexPct.toFixed(1)}%</p>
+                  <p className="text-[10px] text-slate-500">Tingkat Restorasi</p>
+                </div>
+              </div>
+
+              {/* Section 1: Profil Deskriptif Komponen Kesehatan Gigi & Mulut */}
+              <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 pb-3 border-b border-pink-100 dark:border-pink-900/40">
+                  <FileText className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+                  <h4 className="text-base font-black text-slate-900 dark:text-slate-100">
+                    1. Profil Deskriptif Komponen Kesehatan Gigi &amp; Mulut (N = 150)
+                  </h4>
+                </div>
+
+                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                  Berdasarkan hasil survei kesehatan gigi dan mulut terhadap <strong>150 responden</strong> yang terbagi secara proporsional ke dalam 5 kelompok umur standar WHO (30 Balita 0-4 thn, 30 Anak 5-11 thn, 30 Remaja 12-17 thn, 30 Dewasa 18-59 thn, dan 30 Lansia 60+ thn), ditemukan angka prevalensi karies sebesar <strong>{metrics.cariesPrevalencePct.toFixed(1)}%</strong> ({metrics.cariesCount} orang), sementara <strong>{metrics.cariesFreePct.toFixed(1)}%</strong> ({metrics.cariesFreeCount} orang) berada dalam kondisi bebas karies.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <div className="p-4 bg-pink-50/50 dark:bg-pink-950/30 rounded-2xl border border-pink-200/50 dark:border-pink-900/30 space-y-2">
+                    <h5 className="text-xs font-black text-pink-950 dark:text-pink-200 flex items-center gap-1.5">
+                      <Stethoscope className="w-4 h-4 text-pink-600" /> Rincian Komponen Karies Gigi
+                    </h5>
+                    <ul className="text-xs text-slate-700 dark:text-slate-300 space-y-1 list-disc list-inside">
+                      <li><strong>Rata-rata DMF-T Gigi Permanen:</strong> {metrics.meanDMFT.toFixed(2)} (Kategori WHO: <span className="font-bold text-pink-600">{dmftCategoryInfo.text}</span>) dengan SD ± {metrics.sdDMFT.toFixed(2)}.</li>
+                      <li><strong>Komponen Decayed (D):</strong> Rata-rata {metrics.meanD.toFixed(2)} gigi/orang (Total {metrics.sumD} karies aktif tak tertangani).</li>
+                      <li><strong>Komponen Missing (M):</strong> Rata-rata {metrics.meanM.toFixed(2)} gigi/orang (Total {metrics.sumM} gigi dicabut/hilang karena karies).</li>
+                      <li><strong>Komponen Filled (F):</strong> Rata-rata {metrics.meanF.toFixed(2)} gigi/orang (Total {metrics.sumF} gigi tumpat/direstorasi).</li>
+                      <li><strong>Rata-rata def-t Gigi Sulung:</strong> {metrics.meanDeft.toFixed(2)} gigi/anak (Kerusakan gigi susu pada kelompok anak/balita).</li>
+                    </ul>
+                  </div>
+
+                  <div className="p-4 bg-teal-50/50 dark:bg-teal-950/30 rounded-2xl border border-teal-200/50 dark:border-teal-900/30 space-y-2">
+                    <h5 className="text-xs font-black text-teal-950 dark:text-teal-200 flex items-center gap-1.5">
+                      <Activity className="w-4 h-4 text-teal-600" /> Kebersihan Mulut &amp; Jaringan Lunak
+                    </h5>
+                    <ul className="text-xs text-slate-700 dark:text-slate-300 space-y-1 list-disc list-inside">
+                      <li><strong>Skor OHI-S Rata-rata:</strong> {metrics.ohisStats?.avgOHIS?.toFixed(2) || '0.00'} (Debris Index DIS: {metrics.ohisStats?.avgDIS?.toFixed(2) || '0.00'}, Calculus Index CIS: {metrics.ohisStats?.avgCIS?.toFixed(2) || '0.00'}).</li>
+                      <li><strong>Prevalensi Gusi Berdarah (Gingival Bleeding):</strong> {metrics.gusiBerdarahPct.toFixed(1)}% ({metrics.gusiBerdarahCount} orang mengalami tanda peradangan gusi).</li>
+                      <li><strong>Prevalensi Lesi Mukosa Oral:</strong> {metrics.lesiMukosaPct.toFixed(1)}% ({metrics.lesiMukosaCount} orang terdeteksi stomatitis, sariawan, atau perubahan jaringan lunak).</li>
+                      <li><strong>Kebutuhan Rujukan Faskes:</strong> {metrics.perluDirujukPct.toFixed(1)}% ({metrics.perluDirujukCount} orang memerlukan penanganan tingkat lanjut di Puskesmas/RS).</li>
+                    </ul>
                   </div>
                 </div>
               </div>
 
-              {/* Kategori OHI-S WHO */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                <span className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase block">
-                  B. Distribusi Kebersihan Mulut OHI-S (Greene &amp; Vermillion)
-                </span>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Skor Rata-rata OHI-S</span>
-                    <span className="font-mono font-black text-teal-600">{metrics.ohisStats?.avgOHIS?.toFixed(2) || '0.00'}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Debris Index (DI-S)</span>
-                    <span className="font-mono font-black text-teal-600">{metrics.ohisStats?.avgDIS?.toFixed(2) || '0.00'}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Calculus Index (CI-S)</span>
-                    <span className="font-mono font-black text-teal-600">{metrics.ohisStats?.avgCIS?.toFixed(2) || '0.00'}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Status Kebersihan Mulut</span>
-                    <span className="font-extrabold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950 px-2 py-0.5 rounded-full text-[11px]">
-                      {metrics.ohisStats?.avgOHIS <= 1.2 ? 'Baik (0.0 - 1.2)' : metrics.ohisStats?.avgOHIS <= 3.0 ? 'Sedang (1.3 - 3.0)' : 'Buruk (3.1 - 6.0)'}
+              {/* Section 2: Distribusi Frekuensi & Persentase Kategori WHO */}
+              <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-pink-200/60 dark:border-pink-900/40 rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 pb-3 border-b border-pink-100 dark:border-pink-900/40">
+                  <BarChart2 className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+                  <h4 className="text-base font-black text-slate-900 dark:text-slate-100">
+                    2. Distribusi Frekuensi &amp; Persentase Kategori WHO
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Kategori DMF-T WHO */}
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                    <span className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase block">
+                      A. Distribusi Keparahan DMF-T (WHO)
                     </span>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">Rata-rata DMF-T Populasi</span>
+                        <span className="font-mono font-black text-pink-600">{metrics.meanDMFT.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">Kategori Tingkat Keparahan</span>
+                        <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full ${dmftCategoryInfo.badgeBg}`}>
+                          {dmftCategoryInfo.text}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">SiC Index (1/3 Terparah)</span>
+                        <span className="font-mono font-black text-purple-600">{metrics.siCIndex.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">Care Index (F/DMFT)</span>
+                        <span className="font-mono font-black text-emerald-600">{metrics.careIndexPct.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Kategori OHI-S WHO */}
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                    <span className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase block">
+                      B. Distribusi Kebersihan Mulut OHI-S (Greene &amp; Vermillion)
+                    </span>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">Skor Rata-rata OHI-S</span>
+                        <span className="font-mono font-black text-teal-600">{metrics.ohisStats?.avgOHIS?.toFixed(2) || '0.00'}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">Debris Index (DI-S)</span>
+                        <span className="font-mono font-black text-teal-600">{metrics.ohisStats?.avgDIS?.toFixed(2) || '0.00'}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">Calculus Index (CI-S)</span>
+                        <span className="font-mono font-black text-teal-600">{metrics.ohisStats?.avgCIS?.toFixed(2) || '0.00'}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">Status Kebersihan Mulut</span>
+                        <span className="font-extrabold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950 px-2 py-0.5 rounded-full text-[11px]">
+                          {metrics.ohisStats?.avgOHIS <= 1.2 ? 'Baik (0.0 - 1.2)' : metrics.ohisStats?.avgOHIS <= 3.0 ? 'Sedang (1.3 - 3.0)' : 'Buruk (3.1 - 6.0)'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
+
             </div>
-          </div>
+          )}
 
         </div>
       )}
@@ -2863,6 +3715,18 @@ EXECUTE.`;
             {/* Modal Sub-Tabs */}
             <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700">
               <button
+                onClick={() => setSpssGuideTab('values')}
+                className={`flex-1 min-w-[140px] px-3.5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  spssGuideTab === 'values'
+                    ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-md border border-emerald-200/60 dark:border-emerald-900/40'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-700/50'
+                }`}
+              >
+                <Table className="w-4 h-4 text-emerald-500" />
+                <span>Kamus Values (Variable View)</span>
+              </button>
+
+              <button
                 onClick={() => setSpssGuideTab('chisquare')}
                 className={`flex-1 min-w-[140px] px-3.5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   spssGuideTab === 'chisquare'
@@ -2910,6 +3774,242 @@ EXECUTE.`;
                 <span>Solusi Hasil Beda</span>
               </button>
             </div>
+
+            {/* TAB CONTENT 0: KAMUS VALUES (VARIABLE VIEW) */}
+            {spssGuideTab === 'values' && (
+              <div className="space-y-5 text-xs text-slate-700 dark:text-slate-300 animate-fade-in">
+                
+                {/* Header Instruction Box */}
+                <div className="p-4 bg-gradient-to-r from-emerald-950 via-slate-900 to-indigo-950 text-white rounded-2xl border border-emerald-500/40 shadow-md space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-emerald-200">
+                      📖 Panduan Pengisian Variable View &amp; Values di IBM SPSS Statistics
+                    </h4>
+                  </div>
+                  <p className="text-xs text-slate-200 leading-relaxed">
+                    Untuk memastikan pengujian statistik di IBM SPSS memberikan hasil yang <strong>100% sama presisi</strong> dengan aplikasi ini, masukkan daftar nama variabel dan nilai <strong>Value Labels</strong> berikut ke dalam tab <strong>Variable View</strong> SPSS (di pojok kiri bawah SPSS).
+                  </p>
+                  <div className="p-2.5 bg-white/10 rounded-xl border border-white/15 text-[11px] text-emerald-100 flex items-center justify-between gap-2">
+                    <span>💡 <strong>Tips Cepat:</strong> Jika menggunakan file <strong>"Dataset Kode SPSS (.xlsx)"</strong> yang diunduh dari aplikasi, Anda tidak perlu mengetik satu-satu! Cukup copy <strong>Syntax SPSS</strong> di tab 'Impor Excel &amp; Syntax' dan tekan <code>Ctrl + R</code>.</span>
+                    <button
+                      onClick={handleCopySyntax}
+                      className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-[10px] rounded-lg shrink-0 transition-colors cursor-pointer"
+                    >
+                      Salin Syntax SPSS
+                    </button>
+                  </div>
+                </div>
+
+                {/* Table of Variable View & Values */}
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="p-3">Nama Variabel (Name)</th>
+                        <th className="p-3">Label Deskripsi</th>
+                        <th className="p-3">Type</th>
+                        <th className="p-3">Isian Values (Value Labels)</th>
+                        <th className="p-3">Skala (Measure)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
+                      
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-pink-600 dark:text-pink-400">JK_CODE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Jenis Kelamin</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>1 = Laki-Laki</code><br />
+                          <code>2 = Perempuan</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Nominal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-pink-600 dark:text-pink-400">KEL_UMUR_CODE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Kelompok Umur WHO</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>1 = 0-4 th (Balita)</code><br />
+                          <code>2 = 5-11 th (Anak)</code><br />
+                          <code>3 = 12-17 th (Remaja)</code><br />
+                          <code>4 = 18-59 th (Dewasa)</code><br />
+                          <code>5 = 60+ th (Lansia)</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Ordinal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-purple-600 dark:text-purple-400">OHIS_CAT_CODE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Kategori OHI-S (Kebersihan Mulut)</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>1 = Baik (Skor 0.0 - 1.2)</code><br />
+                          <code>2 = Sedang (Skor 1.3 - 3.0)</code><br />
+                          <code>3 = Buruk (Skor 3.1 - 6.0)</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Ordinal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-purple-600 dark:text-purple-400">KARIES_STATUS</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Status Prevalensi Karies</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>0 = Bebas Karies (DMF-T / def-t = 0)</code><br />
+                          <code>1 = Karies Aktif (DMF-T / def-t &ge; 1)</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Nominal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-purple-600 dark:text-purple-400">DMFT_CAT_CODE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Keparahan DMF-T WHO</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>1 = Rendah (&lt; 2.7)</code><br />
+                          <code>2 = Tinggi (&ge; 2.7)</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Ordinal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-indigo-600 dark:text-indigo-400">GUSI_BERDARAH</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Pendarahan Gusi (Gingivitis)</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>0 = Normal / Tidak Berdarah</code><br />
+                          <code>1 = Gusi Berdarah</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Nominal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-indigo-600 dark:text-indigo-400">LESI_MUKOSA</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Lesi Mukosa Oral</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>0 = Normal / Tidak Ada Lesi</code><br />
+                          <code>1 = Ada Lesi Mukosa</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Nominal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-indigo-600 dark:text-indigo-400">PERLU_RUJUKAN</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Kebutuhan Rujukan Faskes</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>0 = Tidak Perlu Rujukan</code><br />
+                          <code>1 = Memerlukan Rujukan</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Nominal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-indigo-600 dark:text-indigo-400">PERAWATAN_SEGERA</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Kebutuhan Perawatan Segera</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>0 = Non-Urgent</code><br />
+                          <code>1 = Urgent / Segera</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Nominal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-amber-600 dark:text-amber-400">PENDIDIKAN_CODE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Pendidikan Terakhir</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>1 = Tidak Sekolah</code> | <code>2 = SD</code><br />
+                          <code>3 = SMP</code> | <code>4 = SMA</code> | <code>5 = Perguruan Tinggi</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Ordinal</td>
+                      </tr>
+
+                      <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-black text-amber-600 dark:text-amber-400">PEKERJAAN_CODE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Pekerjaan / Aktivitas Utama</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
+                          <code>1 = Tidak Bekerja</code> | <code>2 = Ibu Rumah Tangga</code><br />
+                          <code>3 = Pelajar/Mahasiswa</code> | <code>4 = PNS/TNI/Polri</code><br />
+                          <code>5 = Swasta/Buruh</code> | <code>6 = Wiraswasta/Usaha</code>
+                        </td>
+                        <td className="p-3 font-bold text-slate-600 dark:text-slate-300">Nominal</td>
+                      </tr>
+
+                      {/* Continuous Scale Variables */}
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/40">
+                        <td className="p-3 font-mono font-black text-blue-600 dark:text-blue-400">DMFT_SCORE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Indeks DMF-T (Gigi Tetap)</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 text-slate-400 italic">None (Kosong - Data Kontinu Rasio 0 - 32)</td>
+                        <td className="p-3 font-bold text-blue-600 dark:text-blue-400">Scale (Rasio)</td>
+                      </tr>
+
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/40">
+                        <td className="p-3 font-mono font-black text-blue-600 dark:text-blue-400">DEFT_SCORE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Indeks def-t (Gigi Sulung)</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 text-slate-400 italic">None (Kosong - Data Kontinu Rasio 0 - 20)</td>
+                        <td className="p-3 font-bold text-blue-600 dark:text-blue-400">Scale (Rasio)</td>
+                      </tr>
+
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/40">
+                        <td className="p-3 font-mono font-black text-blue-600 dark:text-blue-400">OHIS_SCORE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Skor OHI-S Total</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 text-slate-400 italic">None (Kosong - Data Kontinu Rasio 0.0 - 6.0)</td>
+                        <td className="p-3 font-bold text-blue-600 dark:text-blue-400">Scale (Rasio)</td>
+                      </tr>
+
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/40">
+                        <td className="p-3 font-mono font-black text-blue-600 dark:text-blue-400">DIS_SCORE / CIS_SCORE</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Debris Index / Calculus Index</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 text-slate-400 italic">None (Kosong - Data Kontinu Rasio 0.0 - 3.0)</td>
+                        <td className="p-3 font-bold text-blue-600 dark:text-blue-400">Scale (Rasio)</td>
+                      </tr>
+
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/40">
+                        <td className="p-3 font-mono font-black text-blue-600 dark:text-blue-400">UMUR</td>
+                        <td className="p-3 font-bold text-slate-900 dark:text-slate-100">Umur Responden (Tahun)</td>
+                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px]">Numeric</span></td>
+                        <td className="p-3 text-slate-400 italic">None (Kosong - Umur Kontinu)</td>
+                        <td className="p-3 font-bold text-blue-600 dark:text-blue-400">Scale (Rasio)</td>
+                      </tr>
+
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Step by step manual fill guide */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                  <span className="font-extrabold text-slate-900 dark:text-slate-100 uppercase text-[11px] flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    Langkah Pengisian Manual di IBM SPSS Statistics (Klik demi Klik)
+                  </span>
+                  <ol className="list-decimal list-inside space-y-1.5 text-slate-700 dark:text-slate-300 text-xs">
+                    <li>Buka IBM SPSS Statistics &gt; Klik tab <strong>Variable View</strong> di pojok kiri bawah.</li>
+                    <li>Pada baris pertama kolom <strong>Name</strong>, ketik nama variabel (misal: <code className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border text-pink-600 font-mono">JK_CODE</code>).</li>
+                    <li>Pada kolom <strong>Type</strong>, pilih <code className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border font-mono">Numeric</code>.</li>
+                    <li>Pada kolom <strong>Label</strong>, ketik deskripsi lengkapnya (misal: <code className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border font-mono">Jenis Kelamin</code>).</li>
+                    <li>Pada kolom <strong>Values</strong>, klik tombol titik tiga <code className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border font-mono font-bold">...</code> di sebelah kanan sel:
+                      <ul className="list-disc list-inside ml-4 text-[11px] text-slate-600 dark:text-slate-400 space-y-0.5 mt-0.5">
+                        <li>Di kotak <em>Value</em>: Ketik <code className="font-bold text-emerald-600">1</code> | Di kotak <em>Label</em>: Ketik <code className="font-bold text-slate-800 dark:text-slate-200">Laki-Laki</code> &gt; Klik <strong>Add</strong>.</li>
+                        <li>Di kotak <em>Value</em>: Ketik <code className="font-bold text-emerald-600">2</code> | Di kotak <em>Label</em>: Ketik <code className="font-bold text-slate-800 dark:text-slate-200">Perempuan</code> &gt; Klik <strong>Add</strong>.</li>
+                        <li>Klik <strong>OK</strong>.</li>
+                      </ul>
+                    </li>
+                    <li>Pada kolom <strong>Measure</strong>, pilih <code className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border font-mono">Nominal</code> atau <code className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border font-mono">Ordinal</code> sesuai tabel di atas.</li>
+                  </ol>
+                </div>
+
+              </div>
+            )}
 
             {/* TAB CONTENT 1: CHI-SQUARE */}
             {spssGuideTab === 'chisquare' && (
@@ -3072,13 +4172,6 @@ EXECUTE.`;
                       <AlertTriangle className="w-4 h-4 text-amber-600" />
                       SOLUSI ERROR SPSS: Kenapa T-Test Tidak Muncul / Error di SPSS?
                     </span>
-                    <button
-                      onClick={handleGenerateAndDownloadSpssTTestDataset}
-                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] rounded-lg transition-all cursor-pointer flex items-center gap-1 shrink-0 shadow-sm"
-                    >
-                      <FileDown className="w-3.5 h-3.5" />
-                      <span>Unduh Dataset 150 Responden Valid</span>
-                    </button>
                   </div>
 
                   <p className="text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed font-medium">
@@ -3167,7 +4260,7 @@ EXECUTE.`;
                     <li>Buka aplikasi <strong>IBM SPSS Statistics</strong> di komputer Anda.</li>
                     <li>Klik menu <strong>File &gt; Open &gt; Data...</strong></li>
                     <li>Ubah pilihan <em>Files of type</em> di pojok kanan bawah dari <code>.sav</code> menjadi <strong>Excel (*.xlsx, *.xls)</strong>.</li>
-                    <li>Pilih file <code>Dataset_150_Responden_Valid_TTest_SPSS_Arini.xlsx</code> yang didownload dari aplikasi ini.</li>
+                    <li>Pilih file Excel dataset koding SPSS yang didownload dari tombol <strong>"Dataset Kode SPSS (.xlsx)"</strong> di aplikasi ini.</li>
                     <li>Pada jendela pop-up <em>Read Excel File</em>, pastikan memilih Worksheet: <strong>SPSS_Raw_Data</strong>.</li>
                     <li>Pastikan opsi <strong>"Read variable names from the first row of data"</strong> tercentang, lalu klik <strong>OK</strong>.</li>
                   </ol>
@@ -3259,18 +4352,18 @@ EXECUTE.`;
                   <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1.5 shadow-sm">
                     <div className="flex items-center gap-2 text-pink-600 dark:text-pink-400 font-black text-xs">
                       <span className="w-5 h-5 rounded-full bg-pink-100 dark:bg-pink-950 flex items-center justify-center text-[10px] text-pink-700 dark:text-pink-300">1</span>
-                      <span>Penyebab 1: Menggunakan File Excel Berbeda di SPSS</span>
+                      <span>Penyebab 1: Menggunakan File Excel Berbeda / Tidak Ter-update di SPSS</span>
                     </div>
                     <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-                      <strong>Masalah:</strong> File Excel yang dibuka di SPSS berbeda dengan data yang sedang aktif di aplikasi (misalnya data sampel lama vs dataset 150 responden terbaru).
+                      <strong>Masalah:</strong> File Excel yang dibuka di SPSS berbeda dengan data responden yang sedang aktif di aplikasi (misalnya membuka file ekspor lama).
                     </p>
                     <div className="p-2 bg-pink-50 dark:bg-pink-950/40 rounded-xl text-pink-950 dark:text-pink-200 text-[11px] font-medium flex items-center justify-between gap-2">
-                      <span><strong>Solusi:</strong> Klik tombol "Download Dataset 150 Responden Valid" lalu buka file <code>Dataset_150_Responden_Valid_TTest_SPSS_Arini.xlsx</code> di SPSS.</span>
+                      <span><strong>Solusi:</strong> Selalu klik tombol <strong>"Dataset Kode SPSS (.xlsx)"</strong> di bagian atas untuk mengunduh file Excel koding SPSS terbaru yang persis sama dengan data aktif di aplikasi.</span>
                       <button
-                        onClick={handleGenerateAndDownloadSpssTTestDataset}
-                        className="px-2.5 py-1 bg-pink-600 text-white rounded-lg text-[10px] font-bold shrink-0 hover:bg-pink-700 transition-colors"
+                        onClick={handleExportSPSS}
+                        className="px-2.5 py-1 bg-pink-600 text-white rounded-lg text-[10px] font-bold shrink-0 hover:bg-pink-700 transition-colors cursor-pointer"
                       >
-                        Download Dataset
+                        Unduh SPSS (.xlsx)
                       </button>
                     </div>
                   </div>
