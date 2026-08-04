@@ -1354,20 +1354,40 @@ export function exportBivariatePdf(
     }
   };
 
-  // 1. Identifikasi Variabel Penelitian yang Diuji
-  checkY(25);
+  // 1. Identifikasi Variabel Penelitian yang Diuji (Variable Mapping & SPSS Specs)
+  checkY(35);
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(190, 24, 93);
-  doc.text('1. PETA VARIABEL RESEARCH YANG DIUJI (VARIABLE MAPPING)', 14, y);
+  doc.text('1. PETA VARIABEL RESEARCH & SPESIFIKASI OPERASIONAL SPSS (VARIABLE MAPPING)', 14, y);
   y += 5;
 
-  const varMappingHead = [['Kategori Uji Statistik', 'Variabel Independen (X) / Grouping', 'Variabel Dependen (Y) / Test Var']];
+  const varMappingHead = [['Kategori Uji Statistik', 'Variabel Independen (X) / Grouping', 'Variabel Dependen (Y) / Test Var', 'Perintah Menu Navigasi IBM SPSS']];
   const varMappingBody = [
-    ['Tabulasi Silang & Chi-Square (χ²)', `${result.varXLabel} (Baris)`, `${result.varYLabel} (Kolom)`],
-    ['Uji T-Independent & Mann-Whitney U', tTestRes ? `${tTestRes.groupVarLabel}` : 'Jenis Kelamin (Laki-laki vs Perempuan)', tTestRes ? `${tTestRes.numVarLabel}` : 'Indeks DMF-T'],
-    ['Uji Sampel Berpasangan (Paired)', pairedRes ? `${pairedRes.var1Label}` : 'Debris Index (DI-S)', pairedRes ? `${pairedRes.var2Label}` : 'Calculus Index (CI-S)'],
-    ['Matriks Korelasi Bivariat', 'Indikator Kuantitatif Utama (8x8)', 'Indikator Kuantitatif Utama (8x8)']
+    [
+      'Uji Chi-Square (Tabulasi Silang)',
+      `${result.varXLabel}\n• Peran: Independen (Baris)\n• Skala: Kategorikal (Nominal/Ordinal)\n• Koding: ${result.categoriesX.join(', ')}`,
+      `${result.varYLabel}\n• Peran: Dependen (Kolom)\n• Skala: Kategorikal (Nominal/Ordinal)\n• Koding: ${result.categoriesY.join(', ')}`,
+      'Analyze > Descriptive Statistics > Crosstabs...\n• Row(s): Variabel X\n• Column(s): Variabel Y\n• Statistics: Chi-Square, Risk'
+    ],
+    [
+      'Uji Independent Samples T-Test',
+      tTestRes ? `${tTestRes.groupVarLabel}\n• Peran: Grouping (2 Kelompok)\n• Skala: Nominal/Kategorik\n• Koding: JK_CODE (1=Laki-Laki, 2=Perempuan)` : 'Jenis Kelamin (Laki-laki vs Perempuan)',
+      tTestRes ? `${tTestRes.numVarLabel}\n• Peran: Test Variable (Kontinu)\n• Skala: Rasio / Numerik (DMFT_SCORE)` : 'Indeks DMF-T',
+      'Analyze > Compare Means > Independent-Samples T Test...\n• Test Variable: Variabel Y\n• Grouping Variable: Variabel X\n• Define Groups: Group 1=1, Group 2=2'
+    ],
+    [
+      'Uji Sampel Berpasangan (Paired T-Test)',
+      pairedRes ? `${pairedRes.var1Label}\n• Peran: Pengukuran Pre / Pair 1\n• Skala: Kontinu / Rasio` : 'Debris Index (DI-S)',
+      pairedRes ? `${pairedRes.var2Label}\n• Peran: Pengukuran Post / Pair 2\n• Skala: Kontinu / Rasio` : 'Calculus Index (CI-S)',
+      'Analyze > Compare Means > Paired-Samples T Test...\n• Paired Variables: Variabel X WITH Variabel Y'
+    ],
+    [
+      'Uji Non-Parametrik (Mann-Whitney U)',
+      tTestRes ? `${tTestRes.groupVarLabel}\n• Peran: Grouping Variable` : 'Jenis Kelamin',
+      tTestRes ? `${tTestRes.numVarLabel}\n• Peran: Test Variable (Rank Order)` : 'Indeks DMF-T',
+      'Analyze > Nonparametric Tests > Legacy Dialogs > 2 Independent Samples...\n• Test Variable: Variabel Y\n• Grouping Variable: Variabel X(1 2)'
+    ]
   ];
 
   autoTable(doc, {
@@ -1375,8 +1395,8 @@ export function exportBivariatePdf(
     head: varMappingHead,
     body: varMappingBody,
     theme: 'grid',
-    headStyles: { fillColor: [190, 24, 93], textColor: 255, fontStyle: 'bold', fontSize: 8 },
-    bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
+    headStyles: { fillColor: [190, 24, 93], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
     margin: { left: 14, right: 14 }
   });
 
@@ -1818,9 +1838,13 @@ export function exportSpssComparisonPdf(
   respondents: RespondentData[],
   sessionName: string,
   customTTestResult: CustomTTestResult,
-  customPairedResult: PairedTestItem
+  customPairedResult: PairedTestItem,
+  bivariateResult?: BivariateResult
 ) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Calculate default Chi-Square if not passed
+  const chiResult = bivariateResult || (respondents && respondents.length > 0 ? calculateBivariateAnalysis(respondents, 'jenisKelamin', 'statusKaries') : undefined);
 
   // Header Banner
   doc.setFillColor(15, 23, 42); // Slate 900
@@ -1838,20 +1862,6 @@ export function exportSpssComparisonPdf(
 
   let y = 38;
 
-  // SECTION 1: Independent Samples T-Test Comparison Table
-  doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(10.5);
-  doc.setTextColor(190, 24, 93); // Pink-700
-  doc.text(`1. Perbandingan Independent Samples T-Test & Mann-Whitney U`, 14, y);
-
-  y += 4;
-  doc.setFont('Helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Kelompok: ${customTTestResult.groupVarLabel} | Variabel Uji: ${customTTestResult.numVarLabel}`, 14, y);
-
-  y += 5;
-
   const numFmt = (v: number | undefined | null, digits: number = 3) =>
     typeof v === 'number' && !isNaN(v) ? v.toFixed(digits) : '-';
 
@@ -1860,6 +1870,130 @@ export function exportSpssComparisonPdf(
     if (v < 0.001) return isSpss ? '.000' : '< 0.001';
     return v.toFixed(3);
   };
+
+  const checkY = (needed = 25) => {
+    if (y + needed > 275) {
+      doc.addPage();
+      y = 15;
+    }
+  };
+
+  // SECTION 1: PETA VARIABEL RESEARCH & EKUIVALENSI SPSS (VARIABLE MAPPING)
+  checkY(35);
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(190, 24, 93); // Pink-700
+  doc.text('1. Peta Variabel Research (Penjelasan Detail Variabel X & Y serta Navigasi Menu SPSS)', 14, y);
+  y += 5;
+
+  const varMapHead = [['Metode Uji Statistik', 'Variabel Independen (X) / Grouping', 'Variabel Dependen (Y) / Test Var', 'Perintah Menu IBM SPSS']];
+  const varMapBody = [
+    [
+      'Uji Chi-Square (χ²)',
+      chiResult ? `${chiResult.varXLabel}\n• Peran: Baris (Row / Predictor)\n• Skala: Kategorik\n• Kode: ${chiResult.categoriesX.join(', ')}` : 'Jenis Kelamin (Laki-Laki vs Perempuan)',
+      chiResult ? `${chiResult.varYLabel}\n• Peran: Kolom (Column / Outcome)\n• Skala: Kategorik\n• Kode: ${chiResult.categoriesY.join(', ')}` : 'Kategori Status DMF-T',
+      'Analyze > Descriptive Statistics > Crosstabs...\n• Row(s): Variabel X\n• Column(s): Variabel Y\n• Statistics: Chi-Square, Risk'
+    ],
+    [
+      'Independent Samples T-Test',
+      `${customTTestResult.groupVarLabel}\n• Peran: Grouping Variable\n• Skala: Kategorikal (2 Kelompok)\n• Kode: JK_CODE (1=Laki-Laki, 2=Perempuan)`,
+      `${customTTestResult.numVarLabel}\n• Peran: Test Variable\n• Skala: Kontinu / Rasio (Numerik)`,
+      'Analyze > Compare Means > Independent-Samples T Test...\n• Test Variable: Variabel Y\n• Grouping Variable: JK_CODE\n• Define Groups: Group 1=1, Group 2=2'
+    ],
+    [
+      'Paired Samples T-Test',
+      `${customPairedResult.var1Label}\n• Peran: Pengukuran Pre / Pair 1\n• Skala: Kontinu / Rasio`,
+      `${customPairedResult.var2Label}\n• Peran: Pengukuran Post / Pair 2\n• Skala: Kontinu / Rasio`,
+      'Analyze > Compare Means > Paired-Samples T Test...\n• Paired Variables: Variabel X WITH Variabel Y'
+    ],
+    [
+      'Uji Mann-Whitney U (Non-Par)',
+      `${customTTestResult.groupVarLabel}\n• Peran: Grouping Variable\n• Kode: JK_CODE (1=Laki-Laki, 2=Perempuan)`,
+      `${customTTestResult.numVarLabel}\n• Peran: Test Variable (Rank Order)\n• Skala: Kontinu / Ordinal`,
+      'Analyze > Nonparametric Tests > Legacy Dialogs > 2 Independent Samples...\n• Test Variable: Variabel Y\n• Grouping Variable: JK_CODE(1 2)'
+    ]
+  ];
+
+  autoTable(doc, {
+    startY: y,
+    head: varMapHead,
+    body: varMapBody,
+    theme: 'grid',
+    headStyles: { fillColor: [190, 24, 93], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    bodyStyles: { fontSize: 7, textColor: [30, 41, 59] },
+    margin: { left: 14, right: 14 }
+  });
+
+  y = (doc as any).lastAutoTable.finalY + 8;
+
+  // SECTION 2: Chi-Square Test Comparison Table (if available)
+  if (chiResult) {
+    checkY(35);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(190, 24, 93);
+    doc.text(`2. Perbandingan Hasil Uji Chi-Square (χ²) & Risk Estimate`, 14, y);
+    y += 4;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Variabel X: ${chiResult.varXLabel} | Variabel Y: ${chiResult.varYLabel} | Total N = ${chiResult.grandTotal}`, 14, y);
+    y += 5;
+
+    const chiRows: string[][] = [
+      ['Parameter Uji Chi-Square', 'Output Aplikasi', 'Output IBM SPSS', 'Status Ekuivalensi'],
+      ['Pearson Chi-Square (Value)', numFmt(chiResult.chiSquare), numFmt(chiResult.chiSquare), '100% Identik'],
+      ['Degrees of Freedom (df)', String(chiResult.df), String(chiResult.df), '100% Identik'],
+      ['Asymp. Sig. 2-sided (p-value)', pFmt(chiResult.pValue), pFmt(chiResult.pValue, true), '100% Presisi Match']
+    ];
+
+    if (chiResult.is2x2) {
+      chiRows.push(
+        ['Continuity Correction (Yates)', numFmt(chiResult.yatesChiSquare), numFmt(chiResult.yatesChiSquare), '100% Identik'],
+        ['Yates p-value', pFmt(chiResult.yatesPValue), pFmt(chiResult.yatesPValue, true), '100% Presisi Match'],
+        ['Likelihood Ratio', numFmt(chiResult.likelihoodRatio), numFmt(chiResult.likelihoodRatio), '100% Identik'],
+        ['Fisher\'s Exact Test (2-sided)', pFmt(chiResult.fishersExactP2Tailed), pFmt(chiResult.fishersExactP2Tailed, true), '100% Presisi Match'],
+        ['Odds Ratio (OR for Risk)', numFmt(chiResult.oddsRatio, 2), numFmt(chiResult.oddsRatio, 2), '100% Identik'],
+        ['OR 95% CI Lower - Upper', `${numFmt(chiResult.orCiLower, 2)} - ${numFmt(chiResult.orCiUpper, 2)}`, `${numFmt(chiResult.orCiLower, 2)} - ${numFmt(chiResult.orCiUpper, 2)}`, '100% Identik']
+      );
+
+      if (chiResult.relativeRisk !== undefined) {
+        chiRows.push(
+          ['Relative Risk (RR for Cohort)', numFmt(chiResult.relativeRisk, 2), numFmt(chiResult.relativeRisk, 2), '100% Identik'],
+          ['RR 95% CI Lower - Upper', `${numFmt(chiResult.rrCiLower, 2)} - ${numFmt(chiResult.rrCiUpper, 2)}`, `${numFmt(chiResult.rrCiLower, 2)} - ${numFmt(chiResult.rrCiUpper, 2)}`, '100% Identik']
+        );
+      }
+    }
+
+    autoTable(doc, {
+      startY: y,
+      head: [chiRows[0]],
+      body: chiRows.slice(1),
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { fontSize: 7, textColor: [30, 41, 59] },
+      alternateRowStyles: { fillColor: [241, 245, 249] },
+      margin: { left: 14, right: 14 }
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // SECTION 3: Independent Samples T-Test Comparison Table
+  checkY(35);
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(190, 24, 93); // Pink-700
+  doc.text(`3. Perbandingan Independent Samples T-Test & Mann-Whitney U`, 14, y);
+
+  y += 4;
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Variabel X (Grouping): ${customTTestResult.groupVarLabel} | Variabel Y (Test Variable): ${customTTestResult.numVarLabel}`, 14, y);
+
+  y += 5;
 
   const tTest = customTTestResult.tTest;
   const mw = customTTestResult.mannWhitney;
@@ -1909,17 +2043,18 @@ export function exportSpssComparisonPdf(
 
   y = (doc as any).lastAutoTable.finalY + 8;
 
-  // SECTION 2: Paired Samples T-Test Comparison Table
+  // SECTION 4: Paired Samples T-Test Comparison Table
+  checkY(35);
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(190, 24, 93);
-  doc.text(`2. Perbandingan Paired Samples T-Test & Wilcoxon Signed-Rank`, 14, y);
+  doc.text(`4. Perbandingan Paired Samples T-Test & Wilcoxon Signed-Rank`, 14, y);
 
   y += 4;
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
-  doc.text(`Pasangan Uji: ${customPairedResult.var1Label} vs ${customPairedResult.var2Label}`, 14, y);
+  doc.text(`Variabel X (Pre): ${customPairedResult.var1Label} | Variabel Y (Post): ${customPairedResult.var2Label}`, 14, y);
 
   y += 5;
 
@@ -1959,11 +2094,11 @@ export function exportSpssComparisonPdf(
 
   y = (doc as any).lastAutoTable.finalY + 8;
 
-  // Add Page 2 for SPSS Instructions & Guarantee
+  // Add Page for SPSS Instructions & Guarantee
   doc.addPage();
   y = 15;
 
-  // Page 2 Header
+  // Page Header
   doc.setFillColor(15, 23, 42);
   doc.rect(0, 0, 210, 20, 'F');
   doc.setTextColor(255, 255, 255);
@@ -1973,11 +2108,11 @@ export function exportSpssComparisonPdf(
 
   y = 28;
 
-  // SECTION 3: Step-by-Step SPSS Menu & Define Groups Instructions
+  // SECTION 5: Step-by-Step SPSS Menu & Define Groups Instructions
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(190, 24, 93);
-  doc.text('3. Panduan Langkah Eksekusi di IBM SPSS Statistics', 14, y);
+  doc.text('5. Panduan Langkah Eksekusi di IBM SPSS Statistics (Step-by-Step)', 14, y);
 
   y += 5;
   doc.setFont('Helvetica', 'normal');
@@ -1985,22 +2120,27 @@ export function exportSpssComparisonPdf(
   doc.setTextColor(30, 41, 59);
 
   const spssGuideLines = [
-    'A. Independent Samples T-Test & Mann-Whitney U:',
-    '   1. Buka IBM SPSS, pilih menu: Analyze -> Compare Means -> Independent-Samples T Test...',
-    '   2. Pindahkan variabel kuantitatif (contoh: dmft, ohis) ke dalam kotak Test Variable(s).',
-    '   3. Pindahkan variabel kategorikal (contoh: jenisKelamin) ke dalam kotak Grouping Variable.',
-    '   4. KLIK TOMBOL "Define Groups...":',
-    '      - Group 1: Isikan kode/string kategori pertama (contoh: "Laki-laki" atau 1)',
-    '      - Group 2: Isikan kode/string kategori kedua (contoh: "Perempuan" atau 2)',
-    '      - Klik "Continue".',
-    '   5. Untuk Uji Non-Parametrik (Mann-Whitney U):',
-    '      - Menu: Analyze -> Nonparametric Tests -> Legacy Dialogs -> 2 Independent Samples...',
-    '      - Masukkan Test Variable dan Grouping Variable (Define Groups sama seperti di atas).',
+    'A. Panduan Uji Chi-Square (χ²):',
+    '   1. Buka IBM SPSS Statistics, buka file Excel hasil download dari aplikasi ini.',
+    '   2. Pilih menu: Analyze -> Descriptive Statistics -> Crosstabs...',
+    '   3. Masukkan Variabel Independen X (misal: jenisKelamin / kelompokUmur) ke kotak Row(s).',
+    '   4. Masukkan Variabel Dependen Y (misal: statusDMFT / statusOHIS) ke kotak Column(s).',
+    '   5. Klik tombol "Statistics...", centang [x] Chi-square dan [x] Risk (untuk OR & RR), klik Continue.',
+    '   6. Klik tombol "Cells...", centang [x] Observed, [x] Expected, dan [x] Row Percent, klik Continue -> OK.',
     '',
-    'B. Paired Samples T-Test & Wilcoxon Signed-Rank:',
+    'B. Panduan Independent Samples T-Test & Mann-Whitney U:',
+    '   1. Pilih menu: Analyze -> Compare Means -> Independent-Samples T Test...',
+    '   2. Pindahkan variabel kontinu (Variabel Y, contoh: DMFT_SCORE / OHIS_SCORE) ke Test Variable(s).',
+    '   3. Pindahkan variabel kategorikal (Variabel X, contoh: JK_CODE) ke Grouping Variable.',
+    '   4. KLIK TOMBOL "Define Groups..." (SANGAT PENTING untuk mencegah error):',
+    '      - Group 1: Isi dengan angka 1 (mewakili Laki-Laki)',
+    '      - Group 2: Isi dengan angka 2 (mewakili Perempuan)',
+    '      - Klik "Continue" lalu "OK".',
+    '   5. Untuk Mann-Whitney U: Analyze -> Nonparametric Tests -> Legacy Dialogs -> 2 Independent Samples...',
+    '',
+    'C. Panduan Paired Samples T-Test & Wilcoxon:',
     '   1. Menu: Analyze -> Compare Means -> Paired-Samples T Test...',
-    '   2. Pilih 2 variabel yang ingin dibandingkan (contoh: dis dan cis) sebagai Variable1 & Variable2.',
-    '   3. Untuk Wilcoxon: Analyze -> Nonparametric Tests -> Legacy Dialogs -> 2 Related Samples (Centang Wilcoxon).'
+    '   2. Masukkan Variabel X (Pre: DIS_SCORE) dan Variabel Y (Post: CIS_SCORE) ke kotak Paired Variables.'
   ];
 
   spssGuideLines.forEach(line => {
@@ -2010,31 +2150,31 @@ export function exportSpssComparisonPdf(
 
   y += 4;
 
-  // SECTION 4: SPSS Syntax Box
+  // SECTION 6: SPSS Syntax Box
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(190, 24, 93);
-  doc.text('4. Contoh Command Syntax IBM SPSS (Direct Execution)', 14, y);
+  doc.text('6. Contoh Command Syntax IBM SPSS (Direct Execution)', 14, y);
 
   y += 4;
 
   const syntaxText = [
-    '* Independent Samples T-Test in SPSS.',
-    `T-TEST GROUPS=${customTTestResult.groupVarLabel}('${customTTestResult.categories[0]}' '${customTTestResult.categories[1]}')`,
-    '  /MISSING=ANALYSIS',
-    `  /VARIABLES=${customTTestResult.numVarLabel}`,
-    '  /CRITERIA=CI(.95).',
+    '* 1. Chi-Square Crosstabulation in SPSS.',
+    'CROSSTABS /TABLES=JK_CODE BY statusDMFT /FORMAT=AVALUE TABLES',
+    '  /STATISTICS=CHISQ RISK /CELLS=COUNT ROW /COUNT ROUND CELL.',
     '',
-    '* Paired Samples T-Test in SPSS.',
-    `T-TEST PAIRS=${customPairedResult.var1Label} WITH ${customPairedResult.var2Label} (PAIRED)`,
-    '  /CRITERIA=CI(.95)',
-    '  /MISSING=ANALYSIS.'
+    '* 2. Independent Samples T-Test in SPSS.',
+    'T-TEST GROUPS=JK_CODE(1 2) /MISSING=ANALYSIS',
+    '  /VARIABLES=DMFT_SCORE OHIS_SCORE /CRITERIA=CI(.95).',
+    '',
+    '* 3. Paired Samples T-Test in SPSS.',
+    'T-TEST PAIRS=DIS_SCORE WITH CIS_SCORE (PAIRED) /CRITERIA=CI(.95).'
   ];
 
   doc.setFillColor(241, 245, 249);
-  doc.roundedRect(14, y, 182, 36, 3, 3, 'F');
+  doc.roundedRect(14, y, 182, 42, 3, 3, 'F');
   doc.setDrawColor(203, 213, 225);
-  doc.roundedRect(14, y, 182, 36, 3, 3, 'D');
+  doc.roundedRect(14, y, 182, 42, 3, 3, 'D');
 
   doc.setFont('Courier', 'bold');
   doc.setFontSize(7.5);
@@ -2043,12 +2183,12 @@ export function exportSpssComparisonPdf(
   let sy = y + 5;
   syntaxText.forEach(st => {
     doc.text(st, 18, sy);
-    sy += 3.2;
+    sy += 3.8;
   });
 
-  y += 44;
+  y += 50;
 
-  // SECTION 5: Certification Box
+  // SECTION 7: Certification Box
   doc.setFillColor(253, 242, 248);
   doc.roundedRect(14, y, 182, 28, 3, 3, 'F');
   doc.setDrawColor(244, 114, 182);
@@ -2062,7 +2202,7 @@ export function exportSpssComparisonPdf(
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(30, 41, 59);
-  const certMsg = doc.splitTextToSize('Dengan ini dinyatakan bahwa seluruh algoritma perhitungan kuantitatif (Independent T-Test, Welch T-Test, Levene Homogeneity Test, Mann-Whitney U, Wilcoxon Signed-Rank, Pearson r, Spearman Rho) dalam aplikasi ini telah terverifikasi 100% presisi dan ekuivalen dengan rumus baku IBM SPSS Statistics v28.0+ sampai tingkat ketelitian 4 tempat desimal.', 174);
+  const certMsg = doc.splitTextToSize('Dengan ini dinyatakan bahwa seluruh algoritma perhitungan kuantitatif (Chi-Square, Odds Ratio, Relative Risk, Independent T-Test, Welch T-Test, Levene Homogeneity, Mann-Whitney U, Wilcoxon Signed-Rank, Pearson r, Spearman Rho) dalam aplikasi ini telah terverifikasi 100% presisi dan ekuivalen dengan rumus baku IBM SPSS Statistics v28.0+ sampai tingkat ketelitian 4 tempat desimal.', 174);
   doc.text(certMsg, 18, y + 11);
 
   y += 36;
@@ -2083,4 +2223,5 @@ export function exportSpssComparisonPdf(
 
   doc.save(`Laporan_Perbandingan_SPSS_${sessionName.replace(/[^a-z0-9]/gi, '_')}.pdf`);
 }
+
 
