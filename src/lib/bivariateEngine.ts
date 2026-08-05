@@ -1134,18 +1134,24 @@ export function calculateCustomTTestAndMannWhitney(
     rencanaRujukan: 'Status Rujukan (Dirujuk vs Tidak)',
     perluPerawatanSegera: 'Kebutuhan Perawatan Segera (Ya vs Tidak)',
     kategoriOHIS2Group: 'Kebersihan Mulut (Sedang/Buruk vs Baik)',
+    kelUmur1v2: 'Kelompok Umur WHO (1=0-4 Th Balita vs 2=5-11 Th Anak Sekolah)',
+    kelUmur1v3: 'Kelompok Umur WHO (1=0-4 Th Balita vs 3=12-17 Th Remaja)',
+    kelUmur1v4: 'Kelompok Umur WHO (1=0-4 Th Balita vs 4=18-59 Th Dewasa)',
     kelompokUmur2Group: 'Kelompok Umur (Anak ≤11 thn vs Dewasa ≥12 thn)'
   };
 
   const numLabels: Record<string, string> = {
     dmft: 'Indeks DMF-T (Gigi Tetap)',
+    dmftCat: 'Kategori Keparahan DMF-T WHO (DMFT_CAT_CODE)',
     deft: 'Indeks def-t (Gigi Sulung)',
-    ohis: 'Indeks Kebersihan Mulut (OHI-S)',
+    ohis: 'Skor Kontinu Kebersihan Mulut OHI-S (OHIS_SCORE)',
+    ohisCat: 'Kategori Kebersihan Mulut OHI-S (OHIS_CAT_CODE: 1=Baik, 2=Sedang, 3=Buruk)',
     dis: 'Debris Index (DI-S)',
     cis: 'Calculus Index (CI-S)',
     kariesTotal: 'Jumlah Gigi Karies Aktif (d + D)',
     tumpatTotal: 'Jumlah Gigi Penambalan (f + F)',
-    umur: 'Umur Responden (Tahun)'
+    umur: 'Umur Responden (Tahun)',
+    kelUmurCode: 'Kode Kelompok Umur WHO (KEL_UMUR_CODE)'
   };
 
   const groupVarLabel = groupLabels[groupKey] || 'Kelompok Pembanding';
@@ -1165,6 +1171,24 @@ export function calculateCustomTTestAndMannWhitney(
       const o = r.ohis || generateDefaultOHIS(r);
       return (o.kategori === 'Buruk' || o.kategori === 'Sedang' || o.ohisScore > 1.2) ? 'OHI-S Sedang/Buruk' : 'OHI-S Baik';
     }
+    if (groupKey === 'kelUmur1v2') {
+      const u = typeof r.umur === 'number' ? r.umur : 0;
+      if (u <= 4) return '0-4 Tahun (Balita)';
+      if (u <= 11) return '5-11 Tahun (Anak Sekolah)';
+      return '';
+    }
+    if (groupKey === 'kelUmur1v3') {
+      const u = typeof r.umur === 'number' ? r.umur : 0;
+      if (u <= 4) return '0-4 Tahun (Balita)';
+      if (u >= 12 && u <= 17) return '12-17 Tahun (Remaja)';
+      return '';
+    }
+    if (groupKey === 'kelUmur1v4') {
+      const u = typeof r.umur === 'number' ? r.umur : 0;
+      if (u <= 4) return '0-4 Tahun (Balita)';
+      if (u >= 18 && u <= 59) return '18-59 Tahun (Dewasa)';
+      return '';
+    }
     if (groupKey === 'kelompokUmur2Group') {
       const u = typeof r.umur === 'number' ? r.umur : 12;
       return u <= 11 ? 'Anak (≤11 thn)' : 'Dewasa (≥12 thn)';
@@ -1174,8 +1198,16 @@ export function calculateCustomTTestAndMannWhitney(
 
   const getNumVal = (r: RespondentData): number => {
     if (numKey === 'dmft') return Number(r.dmft) || 0;
+    if (numKey === 'dmftCat') {
+      const d = Number(r.dmft) || 0;
+      return d < 1.2 ? 1 : (d < 2.7 ? 2 : (d < 4.5 ? 3 : (d < 6.6 ? 4 : 5)));
+    }
     if (numKey === 'deft') return Number(r.deft) || 0;
     if (numKey === 'ohis') return Number((r.ohis || generateDefaultOHIS(r)).ohisScore) || 0;
+    if (numKey === 'ohisCat') {
+      const score = Number((r.ohis || generateDefaultOHIS(r)).ohisScore) || 0;
+      return score <= 1.2 ? 1 : (score <= 3.0 ? 2 : 3);
+    }
     if (numKey === 'dis') return Number((r.ohis || generateDefaultOHIS(r)).disScore) || 0;
     if (numKey === 'cis') return Number((r.ohis || generateDefaultOHIS(r)).cisScore) || 0;
     if (numKey === 'kariesTotal') return (r.gigiTetap?.karies || 0) + (r.gigiSulung?.karies || 0);
@@ -1185,6 +1217,10 @@ export function calculateCustomTTestAndMannWhitney(
       return f1 + f2;
     }
     if (numKey === 'umur') return Number(r.umur) || 0;
+    if (numKey === 'kelUmurCode') {
+      const u = Number(r.umur) || 0;
+      return u <= 4 ? 1 : (u <= 11 ? 2 : (u <= 17 ? 3 : (u <= 59 ? 4 : 5)));
+    }
     return 0;
   };
 
@@ -1240,7 +1276,7 @@ export function calculateCustomTTestAndMannWhitney(
     const leveneP = chiSquarePValue(vRatio, 1);
 
     tTest = {
-      tValue: Math.abs(pooledTVal || welchTVal),
+      tValue: pooledTVal || welchTVal,
       df: dfPooled,
       pValue: pooledPVal,
       isSignificant: pooledPVal < 0.05,
@@ -1250,7 +1286,7 @@ export function calculateCustomTTestAndMannWhitney(
       seDiff: sePooled || seDiffWelch,
       ciLower: meanDiff - 1.96 * (sePooled || seDiffWelch),
       ciUpper: meanDiff + 1.96 * (sePooled || seDiffWelch),
-      welchTValue: Math.abs(welchTVal),
+      welchTValue: welchTVal,
       welchDf,
       welchPValue: welchPVal
     };

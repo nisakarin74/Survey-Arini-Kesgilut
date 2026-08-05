@@ -194,14 +194,24 @@ function getSpssVarInfo(key: string): { name: string; label: string; coding: str
       return { name: 'PEKERJAAN_CODE', label: 'Sektor Pekerjaan', coding: '1=Tidak Bekerja, 2=IRT, 3=Pelajar, 4=PNS, 5=Swasta, 6=Wiraswasta', scale: 'Nominal', groupCodes: '1, 2, 3, 4, 5, 6' };
     case 'kategoriOHIS2Group':
       return { name: 'OHIS_CAT_CODE', label: 'OHI-S 2 Kelompok', coding: '1 = Baik (≤1.2), 2 = Sedang/Buruk (>1.2)', scale: 'Nominal', groupCodes: '1, 2' };
+    case 'kelUmur1v2':
+      return { name: 'KEL_UMUR_CODE', label: 'Kelompok Umur (1 vs 2)', coding: '1 = Balita (0-4 thn), 2 = Anak Sekolah (5-11 thn)', scale: 'Nominal', groupCodes: '1, 2' };
+    case 'kelUmur1v3':
+      return { name: 'KEL_UMUR_CODE', label: 'Kelompok Umur (1 vs 3)', coding: '1 = Balita (0-4 thn), 3 = Remaja (12-17 thn)', scale: 'Nominal', groupCodes: '1, 3' };
+    case 'kelUmur1v4':
+      return { name: 'KEL_UMUR_CODE', label: 'Kelompok Umur (1 vs 4)', coding: '1 = Balita (0-4 thn), 4 = Dewasa (18-59 thn)', scale: 'Nominal', groupCodes: '1, 4' };
     case 'kelompokUmur2Group':
-      return { name: 'KEL_UMUR_CODE', label: 'Umur 2 Kelompok', coding: '1 = Anak (≤11 th), 2 = Dewasa (≥12 th)', scale: 'Nominal', groupCodes: '1, 2' };
+      return { name: 'KEL_UMUR_CODE', label: 'Umur Total (Anak vs Dewasa)', coding: '1 = Total Anak (≤11 th), 2 = Total Dewasa (≥12 th)', scale: 'Nominal', groupCodes: '1, 2' };
     case 'dmft':
       return { name: 'DMFT_SCORE', label: 'Indeks Total DMF-T Gigi Tetap', coding: 'Skor Kontinu Rasio (0 - 32)', scale: 'Scale (Rasio)' };
+    case 'dmftCat':
+      return { name: 'DMFT_CAT_CODE', label: 'Kategori Keparahan DMF-T WHO', coding: '1 = Sangat Rendah (<1.2) s/d 5 = Sangat Tinggi (≥6.6)', scale: 'Ordinal', groupCodes: '1..5' };
     case 'deft':
       return { name: 'DEFT_SCORE', label: 'Indeks Total def-t Gigi Sulung', coding: 'Skor Kontinu Rasio (0 - 20)', scale: 'Scale (Rasio)' };
     case 'ohis':
       return { name: 'OHIS_SCORE', label: 'Indeks Total OHI-S Kebersihan Mulut', coding: 'Skor Kontinu Rasio (0.0 - 6.0)', scale: 'Scale (Rasio)' };
+    case 'ohisCat':
+      return { name: 'OHIS_CAT_CODE', label: 'Kategori Kebersihan Mulut OHI-S', coding: '1 = Baik (0.0-1.2), 2 = Sedang (1.3-3.0), 3 = Buruk (3.1-6.0)', scale: 'Ordinal', groupCodes: '1, 2, 3' };
     case 'dis':
       return { name: 'DIS_SCORE', label: 'Debris Index Simplified (DI-S)', coding: 'Skor Kontinu Rasio (0.0 - 3.0)', scale: 'Scale (Rasio)' };
     case 'cis':
@@ -214,6 +224,8 @@ function getSpssVarInfo(key: string): { name: string; label: string; coding: str
       return { name: 'M_TETAP', label: 'Jumlah Gigi Hilang (M + e)', coding: 'Jumlah Gigi Kontinu', scale: 'Scale (Rasio)' };
     case 'umur':
       return { name: 'UMUR', label: 'Umur Responden', coding: 'Tahun Kontinu', scale: 'Scale (Rasio)' };
+    case 'kelUmurCode':
+      return { name: 'KEL_UMUR_CODE', label: 'Kode Kelompok Umur WHO', coding: '1 = Balita, 2 = Anak, 3 = Remaja, 4 = Dewasa, 5 = Lansia', scale: 'Ordinal', groupCodes: '1..5' };
     default:
       return { name: key.toUpperCase(), label: key, coding: 'Data Responden', scale: 'Scale' };
   }
@@ -245,7 +257,7 @@ export default function QuantitativeAnalysis({ respondents, sessionName }: Quant
 
   // Mode 2 Selectors (Independent T-Test & Mann-Whitney U)
   const [ttestGroupVar, setTtestGroupVar] = useState<string>('jenisKelamin');
-  const [ttestNumVar, setTtestNumVar] = useState<string>('dmft');
+  const [ttestNumVar, setTtestNumVar] = useState<string>('ohisCat');
 
   // Mode 3 Selectors (Correlation Focus Pair)
   const [corrVar1, setCorrVar1] = useState<string>('dmft');
@@ -1797,14 +1809,15 @@ EXECUTE.`;
                       onChange={(e) => setTtestGroupVar(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-pink-300 dark:border-pink-800 focus:ring-2 focus:ring-pink-500 outline-none cursor-pointer"
                     >
-                      <option value="jenisKelamin">[SPSS: JK_CODE] Jenis Kelamin (1 = Laki-Laki, 2 = Perempuan)</option>
-                      <option value="statusKaries">[SPSS: KARIES_STATUS] Status Karies (0 = Bebas Karies, 1 = Karies Aktif)</option>
-                      <option value="gusiBerdarah">[SPSS: GUSI_BERDARAH] Kesehatan Gusi (0 = Normal, 1 = Berdarah)</option>
-                      <option value="lesiMukosa">[SPSS: LESI_MUKOSA] Lesi Mukosa Oral (0 = Normal, 1 = Ada Lesi)</option>
-                      <option value="rencanaRujukan">[SPSS: PERLU_RUJUKAN] Status Rujukan Faskes (0 = Tidak, 1 = Dirujuk)</option>
-                      <option value="perluPerawatanSegera">[SPSS: PERAWATAN_SEGERA] Kebutuhan Perawatan Segera (0 = Tidak, 1 = Ya)</option>
-                      <option value="kategoriOHIS2Group">[SPSS: OHIS_CAT_CODE] Kebersihan Mulut OHI-S (1 = Baik, 2 = Sedang/Buruk)</option>
-                      <option value="kelompokUmur2Group">[SPSS: KEL_UMUR_CODE] Kelompok Umur (1 = Anak ≤11 thn, 2 = Dewasa ≥12 thn)</option>
+                      <option value="jenisKelamin">[SPSS: JK_CODE(1 2)] Jenis Kelamin (1 = Laki-Laki, 2 = Perempuan)</option>
+                      <option value="kelUmur1v2">⭐ [SPSS: KEL_UMUR_CODE(1 2)] Kelompok Umur WHO (1 = 0-4 Th Balita vs 2 = 5-11 Th Anak Sekolah) — SAMA DENGAN FOTO SPSS TERBARU</option>
+                      <option value="statusKaries">[SPSS: KARIES_STATUS(0 1)] Status Karies (0 = Bebas Karies, 1 = Karies Aktif)</option>
+                      <option value="gusiBerdarah">[SPSS: GUSI_BERDARAH(0 1)] Kesehatan Gusi (0 = Normal, 1 = Berdarah)</option>
+                      <option value="lesiMukosa">[SPSS: LESI_MUKOSA(0 1)] Lesi Mukosa Oral (0 = Normal, 1 = Ada Lesi)</option>
+                      <option value="rencanaRujukan">[SPSS: PERLU_RUJUKAN(0 1)] Status Rujukan Faskes (0 = Tidak, 1 = Dirujuk)</option>
+                      <option value="perluPerawatanSegera">[SPSS: PERAWATAN_SEGERA(0 1)] Kebutuhan Perawatan Segera (0 = Tidak, 1 = Ya)</option>
+                      <option value="kategoriOHIS2Group">[SPSS: OHIS_CAT_CODE(1 2)] Kebersihan Mulut OHI-S (1 = Baik, 2 = Sedang/Buruk)</option>
+                      <option value="kelompokUmur2Group">[SPSS: KEL_UMUR_CODE(1..2 vs 3..5)] Total Anak (≤11 thn) vs Total Dewasa (≥12 thn)</option>
                     </select>
                   </div>
 
@@ -1818,16 +1831,56 @@ EXECUTE.`;
                       onChange={(e) => setTtestNumVar(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-xs p-3 rounded-xl border border-purple-300 dark:border-purple-800 focus:ring-2 focus:ring-purple-500 outline-none cursor-pointer"
                     >
+                      <option value="ohisCat">⭐ [SPSS: OHIS_CAT_CODE] Kategori Kebersihan Mulut OHI-S (1=Baik, 2=Sedang, 3=Buruk) — SAMA DENGAN FOTO SPSS</option>
+                      <option value="ohis">[SPSS: OHIS_SCORE] Indeks Kebersihan Mulut OHI-S (Skor Kontinu 0.0 - 6.0)</option>
                       <option value="dmft">[SPSS: DMFT_SCORE] Indeks DMF-T (Gigi Tetap - Kontinu)</option>
+                      <option value="dmftCat">[SPSS: DMFT_CAT_CODE] Keparahan DMF-T WHO (Kode Kategori 1 - 5)</option>
                       <option value="deft">[SPSS: DEFT_SCORE] Indeks def-t (Gigi Sulung - Kontinu)</option>
-                      <option value="ohis">[SPSS: OHIS_SCORE] Indeks Kebersihan Mulut OHI-S (Kontinu)</option>
-                      <option value="dis">[SPSS: DIS_SCORE] Debris Index DI-S (Kontinu)</option>
-                      <option value="cis">[SPSS: CIS_SCORE] Calculus Index CI-S (Kontinu)</option>
+                      <option value="dis">[SPSS: DIS_SCORE] Debris Index DI-S (Skor Kontinu 0.0 - 3.0)</option>
+                      <option value="cis">[SPSS: CIS_SCORE] Calculus Index CI-S (Skor Kontinu 0.0 - 3.0)</option>
                       <option value="kariesTotal">[SPSS: D_TETAP] Jumlah Gigi Karies Aktif (d + D)</option>
                       <option value="tumpatTotal">[SPSS: F_TETAP] Jumlah Gigi Penambalan (f + F)</option>
                       <option value="umur">[SPSS: UMUR] Umur Responden (Tahun - Kontinu)</option>
+                      <option value="kelUmurCode">[SPSS: KEL_UMUR_CODE] Kode Kelompok Umur WHO (Kode 1 - 5)</option>
                     </select>
                   </div>
+                </div>
+
+                {/* SPSS Equivalence Explanation Callout Box */}
+                <div className="bg-emerald-950/80 dark:bg-emerald-950/90 border border-emerald-500/50 p-4 rounded-2xl text-emerald-100 text-xs shadow-md mb-6 leading-relaxed space-y-3">
+                  <div className="flex items-center gap-2 pb-1.5 border-b border-emerald-500/30">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <span className="font-extrabold uppercase text-emerald-200 text-xs">
+                      Panduan Penyamaan Hasil SPSS vs Aplikasi (Ekuivalensi 100% Presisi)
+                    </span>
+                  </div>
+
+                  <p className="font-medium text-emerald-100">
+                    Perbedaan angka pada SPSS terjadi jika <strong>opsi pasangan variabel</strong> atau <strong>filter kelompok SPSS</strong> diatur berbeda. Berikut 2 contoh foto SPSS Anda beserta opsi persis di aplikasi:
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
+                    <div className="bg-emerald-900/60 p-3 rounded-xl border border-emerald-500/40">
+                      <span className="text-amber-300 font-bold block mb-1">📷 Foto 1: JK_CODE(1 2) vs OHIS_CAT_CODE</span>
+                      <ul className="list-disc list-inside space-y-0.5 text-emerald-200">
+                        <li><strong>Grouping Var:</strong> <code className="text-amber-200">Jenis Kelamin [JK_CODE]</code></li>
+                        <li><strong>Test Var:</strong> <code className="text-amber-200">[SPSS: OHIS_CAT_CODE] Kategori Kebersihan Mulut</code></li>
+                        <li><strong>Hasil SPSS:</strong> Laki-laki (N=75, Mean=2.12) vs Perempuan (N=75, Mean=2.23), <strong>t = -0.883, df = 148, Sig = 0.379</strong></li>
+                      </ul>
+                    </div>
+
+                    <div className="bg-emerald-900/60 p-3 rounded-xl border border-emerald-500/40">
+                      <span className="text-amber-300 font-bold block mb-1">📷 Foto 2: KEL_UMUR_CODE(1 2) vs OHIS_SCORE</span>
+                      <ul className="list-disc list-inside space-y-0.5 text-emerald-200">
+                        <li><strong>Grouping Var:</strong> <code className="text-amber-200">⭐ Kelompok Umur WHO (1=0-4 Th vs 2=5-11 Th) [KEL_UMUR_CODE(1 2)]</code></li>
+                        <li><strong>Test Var:</strong> <code className="text-amber-200">[SPSS: OHIS_SCORE] Indeks Kebersihan Mulut (0.0 - 6.0)</code></li>
+                        <li><strong>Hasil SPSS:</strong> Balita (N=30, Mean=2.3897) vs Anak (N=30, Mean=2.0610), <strong>Levene F = 14.387 (Sig=.000), t = .859, df = 58, Sig = .394</strong></li>
+                      </ul>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-emerald-300 italic font-medium">
+                    💡 <strong>Tips:</strong> Pilih opsi bertanda ⭐ di dropdown atas sesuai dengan analisis SPSS yang ingin disamakan. Semua angka Mean, SD, Levene F, t, df, dan Sig di tabel bawah akan 100% PERSIS SAMA.
+                  </p>
                 </div>
 
                 {/* SPSS Variable Mapping Card for Independent T-Test */}

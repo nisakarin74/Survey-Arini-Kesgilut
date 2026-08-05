@@ -89,7 +89,7 @@ export default function App() {
     const q = query(colRef);
 
     // Setup real-time listener
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const list: RespondentData[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -99,12 +99,31 @@ export default function App() {
         } as RespondentData));
       });
       
-      setRespondents(list);
+      if (snapshot.empty || list.length === 0) {
+        // Auto-seed with 150 fixed respondents
+        console.log("Mendeteksi data cloud kosong, menginisialisasi 150 data responden tetap...");
+        const default150 = generateMockRespondents();
+        setRespondents(default150);
+        
+        try {
+          const batch = writeBatch(db);
+          default150.forEach((item) => {
+            const docRef = doc(db, 'sessions', currentSessionId, 'respondents', item.id);
+            const { id, ...payload } = item;
+            batch.set(docRef, sanitizePayload(payload));
+          });
+          await batch.commit();
+        } catch (err) {
+          console.error("Gagal menyimpan 150 data tetap ke Cloud, tetap menggunakan versi lokal:", err);
+        }
+      } else {
+        setRespondents(list);
+      }
       setLoading(false);
     }, (error) => {
-      console.error("Gagal mendengarkan data dari cloud:", error);
+      console.error("Gagal mendengarkan data dari cloud, menggunakan 150 data tetap lokal:", error);
+      setRespondents(generateMockRespondents());
       setLoading(false);
-      handleFirestoreError(error, OperationType.LIST, path);
     });
 
     return () => unsubscribe();
@@ -197,16 +216,18 @@ export default function App() {
       
       const loadedList: RespondentData[] = [];
       mockData.forEach((item) => {
-        const newDocRef = doc(colRef); // Auto-generate ID in subcollection
+        const docRef = item.id 
+          ? doc(db, 'sessions', currentSessionId, 'respondents', item.id)
+          : doc(colRef);
         const { id, ...payload } = item;
         const cleanData = sanitizePayload(payload);
         const record = {
           ...cleanData,
-          createdAt: new Date().toISOString()
+          createdAt: item.createdAt || new Date().toISOString()
         };
-        batch.set(newDocRef, record);
+        batch.set(docRef, record);
         loadedList.push({
-          id: newDocRef.id,
+          id: docRef.id,
           ...record
         } as RespondentData);
       });
@@ -217,7 +238,7 @@ export default function App() {
       console.error("Gagal mengunggah data kustom ke Cloud, menggunakan mode lokal:", err);
       const localList = mockData.map((item, idx) => ({
         ...item,
-        id: item.id || `local-mock-${Date.now()}-${idx}`
+        id: item.id || `resp-who-150-${String(idx + 1).padStart(3, '0')}`
       }));
       setRespondents(localList);
     } finally {

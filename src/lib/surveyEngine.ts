@@ -1813,7 +1813,9 @@ export function generate150DiverseRespondents(): RespondentData[] {
       const perluDirujuk = (perluPerawatanSegera || i % 4 === 0);
       const dirujukKe = perluDirujuk ? (i % 2 === 0 ? 'puskesmas' : 'rsgm_rskgm') : 'tidak_dirujuk';
 
+      const respId = `resp-who-150-${String(idCounter).padStart(3, '0')}`;
       const resp: RespondentData = {
+        id: respId,
         nama: name,
         nik,
         jenisKelamin: gender,
@@ -1835,7 +1837,7 @@ export function generate150DiverseRespondents(): RespondentData[] {
           dirujukKe
         },
         createdBy,
-        createdAt: new Date()
+        createdAt: '2026-07-23T08:00:00.000Z'
       };
 
       results.push(ensureOHISForRespondent(resp));
